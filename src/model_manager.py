@@ -5,9 +5,12 @@ Handles downloading, loading, and running the local LLM.
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Callable
 from huggingface_hub import hf_hub_download
+
+from logger import log_info, log_error, log_debug, log_warning, Timer, get_memory_usage_mb
 
 
 # Default model configuration
@@ -79,14 +82,25 @@ def download_model(
     models_dir = get_models_directory()
     model_path = models_dir / model_config['filename']
 
+    log_info(f"Model download requested: {model_config['name']}")
+    log_debug(f"Model path: {model_path}")
+    log_debug(f"Models directory: {models_dir}")
+
     if model_path.exists():
+        file_size_gb = model_path.stat().st_size / (1024**3)
+        log_info(f"Model already exists: {model_path.name} ({file_size_gb:.2f} GB)")
         if progress_callback:
             progress_callback(100.0, "Model already downloaded")
         return model_path, None
 
     try:
+        log_info(f"Starting download: {model_config['repo_id']}/{model_config['filename']}")
+        log_info(f"Expected size: ~{model_config['size_gb']} GB")
+
         if progress_callback:
             progress_callback(0.0, f"Downloading {model_config['name']} (~{model_config['size_gb']} GB)...")
+
+        start_time = time.time()
 
         # Download from HuggingFace
         downloaded_path = hf_hub_download(
@@ -96,6 +110,10 @@ def download_model(
             local_dir_use_symlinks=False,
         )
 
+        elapsed = time.time() - start_time
+        file_size_gb = Path(downloaded_path).stat().st_size / (1024**3)
+        log_info(f"Download complete: {file_size_gb:.2f} GB in {elapsed:.1f}s")
+
         if progress_callback:
             progress_callback(100.0, "Download complete")
 
@@ -103,6 +121,8 @@ def download_model(
 
     except Exception as e:
         error_msg = f"Failed to download model: {str(e)}"
+        log_error(error_msg)
+        log_error(f"Exception type: {type(e).__name__}")
         if progress_callback:
             progress_callback(0.0, error_msg)
         return model_path, error_msg
@@ -123,12 +143,30 @@ class Summarizer:
         from llama_cpp import Llama
 
         self.n_ctx = n_ctx
+        # Use half of available cores to reduce CPU load while maintaining decent speed
+        cpu_count = os.cpu_count() or 8
+        default_threads = max(4, cpu_count // 2)
+        self.n_threads = n_threads or default_threads
+
+        log_info(f"Initializing Summarizer")
+        log_info(f"Model path: {model_path}")
+        log_info(f"Context window: {n_ctx} tokens")
+        log_info(f"CPU threads: {self.n_threads} of {cpu_count} available")
+        log_debug(f"Memory before loading: {get_memory_usage_mb()} MB")
+
+        start_time = time.time()
+
         self.llm = Llama(
             model_path=str(model_path),
             n_ctx=n_ctx,
-            n_threads=n_threads or os.cpu_count(),
+            n_threads=self.n_threads,
+            n_threads_batch=self.n_threads,  # Also limit batch processing threads
             verbose=False,
         )
+
+        load_time = time.time() - start_time
+        log_info(f"Model loaded successfully in {load_time:.2f}s")
+        log_debug(f"Memory after loading: {get_memory_usage_mb()} MB")
 
     def summarize(
         self,
@@ -149,12 +187,17 @@ class Summarizer:
         Returns:
             The generated summary
         """
+        original_length = len(text)
+        log_info(f"Starting summarization: type={summary_type}, input_chars={original_length}")
+        log_debug(f"Max tokens for response: {max_tokens}")
+
         # Truncate text if too long for context window
         # Rough estimate: ~4 chars per token, leave room for prompt (~500 tokens) and response
         max_input_tokens = self.n_ctx - 1500  # Reserve for prompt and output
         max_input_chars = max_input_tokens * 3  # Conservative: 3 chars per token
         if len(text) > max_input_chars:
             text = text[:max_input_chars] + "\n\n[Document truncated due to length...]"
+            log_warning(f"Text truncated from {original_length} to {max_input_chars} chars")
 
         prompts = {
             "brief": """Summarize the following document in one concise paragraph (3-5 sentences).
@@ -192,8 +235,13 @@ Structured Summary:"""
         }
 
         prompt = prompts.get(summary_type, prompts["detailed"]).format(text=text)
+        prompt_tokens_estimate = len(prompt) // 3
+        log_debug(f"Prompt size: {len(prompt)} chars (~{prompt_tokens_estimate} tokens)")
 
         # Generate response
+        log_info("Generating summary (LLM inference starting)...")
+        start_time = time.time()
+
         response = self.llm(
             prompt,
             max_tokens=max_tokens,
@@ -203,7 +251,18 @@ Structured Summary:"""
             echo=False,
         )
 
+        elapsed = time.time() - start_time
         summary = response['choices'][0]['text'].strip()
+
+        # Log performance metrics
+        output_tokens = response.get('usage', {}).get('completion_tokens', len(summary) // 4)
+        tokens_per_sec = output_tokens / elapsed if elapsed > 0 else 0
+
+        log_info(f"Summary generated in {elapsed:.2f}s")
+        log_info(f"Output: {len(summary)} chars, ~{output_tokens} tokens")
+        log_info(f"Speed: {tokens_per_sec:.1f} tokens/sec")
+        log_debug(f"Memory usage: {get_memory_usage_mb()} MB")
+
         return summary
 
     def __del__(self):
