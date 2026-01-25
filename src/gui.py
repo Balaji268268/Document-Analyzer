@@ -35,9 +35,22 @@ class DocSummarizerApp(ctk.CTk):
         self.summarizer: Optional[Summarizer] = None
         self.current_file: Optional[str] = None
         self.extracted_text: Optional[str] = None
+        self._is_closing = False
+
+        # Handle window close properly
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._create_widgets()
         self._check_model_status()
+
+    def _on_close(self):
+        """Clean shutdown when window is closed."""
+        self._is_closing = True
+        # Release model from memory
+        if self.summarizer:
+            del self.summarizer
+            self.summarizer = None
+        self.destroy()
 
     def _create_widgets(self):
         """Create all GUI widgets."""
