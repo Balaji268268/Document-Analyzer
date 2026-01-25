@@ -25,14 +25,27 @@ A fully offline document summarization tool powered by a local AI model. Designe
 
 ## Quick Start
 
-### 1. Clone or Download
+### Option A: Download Standalone Executable (Easiest)
+
+Download the latest release for your platform - no Python required:
+
+1. Go to [Releases](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest)
+2. Download:
+   - **Windows**: `DocSummarizer.exe`
+   - **Linux**: `DocSummarizer`
+3. Run the executable
+4. On first launch, click "Download Model" (~4.4 GB, one-time)
+
+### Option B: Run from Source
+
+#### 1. Clone or Download
 
 ```bash
 git clone https://github.com/Wintersta7e/Doc-Summarizer.git
 cd Doc-Summarizer
 ```
 
-### 2. Run Setup Script
+#### 2. Run Setup Script
 
 **Windows:**
 ```cmd
@@ -45,7 +58,7 @@ chmod +x setup_and_run.sh
 ./setup_and_run.sh
 ```
 
-### 3. First Launch
+#### 3. First Launch
 
 On first launch, the application will:
 1. Create a virtual environment
