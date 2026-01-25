@@ -10,6 +10,7 @@ A fully offline document summarization tool powered by a local AI model. Designe
 - **Batch Processing**: Summarize entire folders of documents at once
 - **Flexible Output**: Choose between brief, detailed, or structured summaries
 - **Cross-Platform**: Works on Windows, macOS, and Linux
+- **Adjustable CPU Usage**: Control how many CPU threads to use via Settings
 
 ## System Requirements
 
@@ -123,7 +124,8 @@ DocSummarizer/
     ├── gui.py              # GUI application (CustomTkinter)
     ├── cli.py              # Command-line interface
     ├── document_parser.py  # Document text extraction
-    └── model_manager.py    # LLM download and inference
+    ├── model_manager.py    # LLM download and inference
+    └── logger.py           # Logging and diagnostics
 ```
 
 ## How It Works
@@ -156,7 +158,7 @@ The model is downloaded on first launch and stored in:
 | Medium (5-15 pages) | 1-2 minutes |
 | Long (15+ pages) | 2-3 minutes |
 
-**Note**: Times vary based on CPU. Uses all available cores by default.
+**Note**: Times vary based on CPU and thread settings. By default, uses half of available CPU cores to balance speed and system responsiveness. Adjust in **Settings > CPU Threads** if needed.
 
 ## Troubleshooting
 
@@ -172,8 +174,20 @@ The model is downloaded on first launch and stored in:
 
 ### Slow performance
 - Normal on CPU - the model is computationally intensive
+- Increase CPU threads in Settings for faster processing
 - Close other applications to free resources
 - Consider GPU acceleration (see DEVELOPMENT.md)
+
+### High CPU usage
+- Go to **Settings > CPU Threads** and lower the thread count
+- Using fewer threads reduces CPU load but increases processing time
+
+### Checking logs for errors
+Log files are stored at:
+- **Windows**: `%LOCALAPPDATA%\DocSummarizer\logs\`
+- **Linux**: `~/.local/share/DocSummarizer/logs/`
+
+Logs contain startup info, performance metrics, and error details (no document content is logged).
 
 ### PDF extraction issues
 - Some scanned PDFs (image-only) cannot be parsed
