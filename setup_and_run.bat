@@ -2,6 +2,9 @@
 REM DocSummarizer Setup and Run Script for Windows
 REM This script sets up the environment and runs the application
 
+REM Change to the directory where this script is located
+cd /d "%~dp0"
+
 echo ============================================
 echo  DocSummarizer - Setup and Run
 echo ============================================
@@ -22,9 +25,13 @@ if errorlevel 1 (
 echo Python found. Checking dependencies...
 echo.
 
-REM Check if virtual environment exists
-if not exist "venv" (
+REM Check if Windows virtual environment exists and is valid
+if not exist "venv\Scripts\activate.bat" (
     echo Creating virtual environment...
+    if exist "venv" (
+        echo Removing invalid venv folder...
+        rmdir /s /q venv
+    )
     python -m venv venv
     if errorlevel 1 (
         echo Failed to create virtual environment.
@@ -54,4 +61,6 @@ REM Run the application
 python run.py
 
 REM Deactivate virtual environment
-call venv\Scripts\deactivate.bat
+deactivate
+
+pause
