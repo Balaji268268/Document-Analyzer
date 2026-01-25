@@ -5,56 +5,80 @@ REM This script sets up the environment and runs the application
 REM Change to the directory where this script is located
 cd /d "%~dp0"
 
-echo ============================================
-echo  DocSummarizer - Setup and Run
-echo ============================================
+echo.
+echo  ============================================
+echo       DocSummarizer - Setup and Run
+echo  ============================================
 echo.
 
 REM Check if Python is installed
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo Python is not installed or not in PATH.
-    echo Please install Python 3.10 or later from:
-    echo https://www.python.org/downloads/
+    echo  [ERROR] Python is not installed or not in PATH.
     echo.
-    echo Make sure to check "Add Python to PATH" during installation.
+    echo  Please install Python 3.10 or later from:
+    echo  https://www.python.org/downloads/
+    echo.
+    echo  Make sure to check "Add Python to PATH" during installation.
+    echo.
     pause
     exit /b 1
 )
 
-echo Python found. Checking dependencies...
+for /f "tokens=*" %%i in ('python --version') do set PYVER=%%i
+echo  [OK] %PYVER% found
 echo.
 
 REM Check if Windows virtual environment exists and is valid
 if not exist "venv\Scripts\activate.bat" (
-    echo Creating virtual environment...
     if exist "venv" (
-        echo Removing invalid venv folder...
+        echo  [INFO] Removing incompatible virtual environment...
         rmdir /s /q venv
     )
+    echo  [1/3] Creating virtual environment...
+    echo       This only happens once.
+    echo.
     python -m venv venv
     if errorlevel 1 (
-        echo Failed to create virtual environment.
+        echo  [ERROR] Failed to create virtual environment.
         pause
         exit /b 1
     )
+    echo  [OK] Virtual environment created
+    echo.
 )
 
 REM Activate virtual environment
 call venv\Scripts\activate.bat
 
-REM Install/upgrade dependencies
-echo Installing dependencies (this may take a few minutes on first run)...
-pip install -r requirements.txt --quiet
-
+REM Check if dependencies need to be installed
+pip show llama-cpp-python >nul 2>&1
 if errorlevel 1 (
-    echo Failed to install dependencies.
-    pause
-    exit /b 1
+    echo  [2/3] Installing dependencies...
+    echo       This may take 5-10 minutes on first run.
+    echo       (Compiling AI engine for your system)
+    echo.
+    echo       Please wait...
+    echo.
+    pip install -r requirements.txt --quiet
+    if errorlevel 1 (
+        echo.
+        echo  [ERROR] Failed to install dependencies.
+        pause
+        exit /b 1
+    )
+    echo  [OK] Dependencies installed
+    echo.
+) else (
+    echo  [OK] Dependencies already installed
+    echo.
 )
 
+echo  [3/3] Starting DocSummarizer...
 echo.
-echo Starting DocSummarizer...
+echo  ============================================
+echo       The GUI window will open shortly
+echo  ============================================
 echo.
 
 REM Run the application
@@ -63,4 +87,6 @@ python run.py
 REM Deactivate virtual environment
 deactivate
 
+echo.
+echo  DocSummarizer closed.
 pause
