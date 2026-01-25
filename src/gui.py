@@ -15,6 +15,7 @@ from model_manager import (
     Summarizer, download_model, is_model_downloaded,
     get_model_path, DEFAULT_MODEL, SMALL_MODEL
 )
+from logger import log_startup, log_info, log_error, log_debug, get_log_directory
 
 
 # Appearance settings
@@ -22,11 +23,71 @@ ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
 ctk.set_default_color_theme("blue")
 
 
+class LoadingDialog(ctk.CTkToplevel):
+    """A small loading dialog that appears during long operations."""
+
+    def __init__(self, parent, message: str = "Loading..."):
+        super().__init__(parent)
+
+        # Configure window
+        self.title("")
+        self.geometry("300x100")
+        self.resizable(False, False)
+        self.transient(parent)  # Stay on top of parent
+        self.grab_set()  # Modal dialog
+
+        # Remove window decorations for cleaner look
+        self.overrideredirect(True)
+
+        # Center on parent
+        self.update_idletasks()
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        x = parent_x + (parent_w - 300) // 2
+        y = parent_y + (parent_h - 100) // 2
+        self.geometry(f"300x100+{x}+{y}")
+
+        # Create frame with border
+        self.frame = ctk.CTkFrame(self, corner_radius=10)
+        self.frame.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # Message label
+        self.message_label = ctk.CTkLabel(
+            self.frame,
+            text=message,
+            font=ctk.CTkFont(size=14)
+        )
+        self.message_label.pack(pady=(20, 10))
+
+        # Progress bar (indeterminate)
+        self.progress = ctk.CTkProgressBar(self.frame, width=250)
+        self.progress.pack(pady=(0, 20))
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
+
+    def update_message(self, message: str):
+        """Update the loading message."""
+        self.message_label.configure(text=message)
+        self.update()
+
+    def close(self):
+        """Close the loading dialog."""
+        self.progress.stop()
+        self.grab_release()
+        self.destroy()
+
+
 class DocSummarizerApp(ctk.CTk):
     """Main application window."""
 
     def __init__(self):
         super().__init__()
+
+        # Initialize logging first
+        log_startup()
+        log_info("GUI initialization starting")
 
         self.title("DocSummarizer - Offline Document Summarization")
         self.geometry("900x700")
@@ -42,15 +103,39 @@ class DocSummarizerApp(ctk.CTk):
 
         self._create_widgets()
         self._check_model_status()
+        log_info("GUI initialization complete")
 
     def _on_close(self):
         """Clean shutdown when window is closed."""
+        if self._is_closing:
+            return  # Prevent multiple close attempts
+
+        log_info("Application closing...")
         self._is_closing = True
+
+        # Close any open toplevel windows (like LoadingDialog)
+        for widget in self.winfo_children():
+            if isinstance(widget, ctk.CTkToplevel):
+                try:
+                    widget.destroy()
+                except:
+                    pass
+
         # Release model from memory
         if self.summarizer:
+            log_debug("Releasing model from memory")
             del self.summarizer
             self.summarizer = None
-        self.destroy()
+
+        log_info("Application closed")
+
+        try:
+            self.destroy()
+        except:
+            pass
+
+        import sys
+        sys.exit(0)
 
     def _create_widgets(self):
         """Create all GUI widgets."""
@@ -204,13 +289,67 @@ class DocSummarizerApp(ctk.CTk):
         )
         self.download_btn.grid(row=2, column=0, padx=10, pady=10, sticky="w")
 
+        # Performance section
+        performance_label = ctk.CTkLabel(
+            self.tab_settings,
+            text="Performance",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        performance_label.grid(row=3, column=0, padx=10, pady=(20, 5), sticky="w")
+
+        # CPU threads slider
+        cpu_count = os.cpu_count() or 8
+        default_threads = max(4, cpu_count // 2)
+        self.threads_var = ctk.IntVar(value=default_threads)
+
+        threads_frame = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
+        threads_frame.grid(row=4, column=0, padx=10, pady=5, sticky="w")
+
+        threads_label = ctk.CTkLabel(threads_frame, text="CPU Threads:")
+        threads_label.grid(row=0, column=0, padx=(0, 10))
+
+        self.threads_slider = ctk.CTkSlider(
+            threads_frame,
+            from_=2,
+            to=cpu_count,
+            number_of_steps=cpu_count - 2,
+            variable=self.threads_var,
+            width=200,
+            command=self._on_threads_changed
+        )
+        self.threads_slider.grid(row=0, column=1, padx=5)
+
+        self.threads_value_label = ctk.CTkLabel(
+            threads_frame,
+            text=f"{default_threads} / {cpu_count}",
+            width=60
+        )
+        self.threads_value_label.grid(row=0, column=2, padx=5)
+
+        threads_hint = ctk.CTkLabel(
+            self.tab_settings,
+            text="Lower = less CPU usage but slower. Requires model reload.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        threads_hint.grid(row=5, column=0, padx=10, pady=(0, 5), sticky="w")
+
+        self.reload_model_btn = ctk.CTkButton(
+            self.tab_settings,
+            text="Reload Model",
+            command=self._reload_model,
+            width=150,
+            state="disabled"
+        )
+        self.reload_model_btn.grid(row=6, column=0, padx=10, pady=5, sticky="w")
+
         # Appearance section
         appearance_label = ctk.CTkLabel(
             self.tab_settings,
             text="Appearance",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        appearance_label.grid(row=3, column=0, padx=10, pady=(20, 5), sticky="w")
+        appearance_label.grid(row=7, column=0, padx=10, pady=(20, 5), sticky="w")
 
         self.appearance_var = ctk.StringVar(value="System")
         self.appearance_menu = ctk.CTkOptionMenu(
@@ -220,7 +359,7 @@ class DocSummarizerApp(ctk.CTk):
             command=self._change_appearance,
             width=150
         )
-        self.appearance_menu.grid(row=4, column=0, padx=10, pady=5, sticky="w")
+        self.appearance_menu.grid(row=8, column=0, padx=10, pady=5, sticky="w")
 
         # About section
         about_label = ctk.CTkLabel(
@@ -228,7 +367,7 @@ class DocSummarizerApp(ctk.CTk):
             text="About",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        about_label.grid(row=5, column=0, padx=10, pady=(20, 5), sticky="w")
+        about_label.grid(row=9, column=0, padx=10, pady=(20, 5), sticky="w")
 
         about_text = ctk.CTkLabel(
             self.tab_settings,
@@ -239,7 +378,7 @@ class DocSummarizerApp(ctk.CTk):
             anchor="w",
             justify="left"
         )
-        about_text.grid(row=6, column=0, padx=10, pady=5, sticky="w")
+        about_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
 
     def _check_model_status(self):
         """Check if the model is downloaded and update UI accordingly."""
@@ -261,16 +400,66 @@ class DocSummarizerApp(ctk.CTk):
         """Load the model in a background thread."""
         def load():
             try:
-                self.status_label.configure(text="Loading model...")
+                n_threads = self.threads_var.get()
+                self.status_label.configure(text=f"Loading model ({n_threads} threads)...")
                 model_path = get_model_path()
-                self.summarizer = Summarizer(model_path)
+                self.summarizer = Summarizer(model_path, n_threads=n_threads)
                 self.status_label.configure(text="Ready", text_color="green")
                 self._update_button_states()
+                self.reload_model_btn.configure(state="disabled")
             except Exception as e:
                 self.status_label.configure(text=f"Error loading model: {str(e)}", text_color="red")
+                log_error(f"Model loading failed: {str(e)}")
 
         thread = threading.Thread(target=load, daemon=True)
         thread.start()
+
+    def _on_threads_changed(self, value):
+        """Handle CPU threads slider change."""
+        threads = int(value)
+        cpu_count = os.cpu_count() or 8
+        self.threads_value_label.configure(text=f"{threads} / {cpu_count}")
+        # Enable reload button if model is loaded
+        if self.summarizer is not None:
+            self.reload_model_btn.configure(state="normal")
+
+    def _reload_model(self):
+        """Reload the model with new thread settings."""
+        n_threads = self.threads_var.get()
+        log_info(f"Reloading model with {n_threads} threads")
+
+        # Show loading dialog
+        loading = LoadingDialog(self, f"Reloading model with {n_threads} threads...")
+
+        def reload():
+            try:
+                # Release old model
+                if self.summarizer:
+                    del self.summarizer
+                    self.summarizer = None
+
+                # Load new model
+                model_path = get_model_path()
+                self.summarizer = Summarizer(model_path, n_threads=n_threads)
+
+                # Update UI on main thread
+                self.after(0, lambda: self._on_reload_complete(loading, True))
+            except Exception as e:
+                log_error(f"Model reload failed: {str(e)}")
+                self.after(0, lambda: self._on_reload_complete(loading, False, str(e)))
+
+        thread = threading.Thread(target=reload, daemon=True)
+        thread.start()
+
+    def _on_reload_complete(self, loading_dialog, success: bool, error: str = None):
+        """Handle model reload completion."""
+        loading_dialog.close()
+        if success:
+            self.status_label.configure(text="Ready", text_color="green")
+            self.reload_model_btn.configure(state="disabled")
+            self._update_button_states()
+        else:
+            self.status_label.configure(text=f"Error: {error}", text_color="red")
 
     def _start_model_download(self):
         """Start downloading the model in a background thread."""
