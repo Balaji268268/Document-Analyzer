@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build for (e.g. v1.1.0). Must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  # `inputs.tag` is user-controlled but only ever appears as a concurrency
+  # key here; GitHub treats this as opaque, so no shell-injection risk.
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.os_label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_label: linux-x64
+            artifact_path: dist/DocSummarizer
+            asset_suffix: linux-x64
+          - os: windows-latest
+            os_label: windows-x64
+            artifact_path: dist/DocSummarizer.exe
+            asset_suffix: windows-x64.exe
+
+    steps:
+      # Pass the user-controlled tag through `env:` (never directly inline
+      # in `run:`) and validate it matches a semver-like pattern before we
+      # use it anywhere else.
+      - name: Resolve and validate tag
+        id: tag
+        env:
+          TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          if [[ ! "$TAG_INPUT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?$ ]]; then
+            echo "Refusing to build: tag '$TAG_INPUT' does not look like vX.Y.Z" >&2
+            exit 1
+          fi
+          echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # llama-cpp-python has no wheels for many python/OS combos at 0.3.x,
+      # so we accept a source compile here (cmake + MSVC on Windows,
+      # cmake + gcc on Linux). Slow but it's a once-per-release cost.
+      - name: Install package + runtime + PyInstaller
+        run: pip install -e ".[runtime]" pyinstaller
+
+      - name: Build executable
+        run: pyinstaller --noconfirm DocSummarizer.spec
+
+      - name: Stage artifact
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SRC: ${{ matrix.artifact_path }}
+          SUFFIX: ${{ matrix.asset_suffix }}
+        shell: bash
+        run: |
+          mkdir -p staging
+          DEST="staging/DocSummarizer-${TAG}-${SUFFIX}"
+          cp "$SRC" "$DEST"
+          ls -lh "$DEST"
+          echo "DEST=$DEST" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: gh release upload "$TAG" "$DEST" --clobber
