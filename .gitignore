@@ -1,5 +1,6 @@
 # Virtual environment
 venv/
+venv_*/
 env/
 .venv/
 
@@ -44,3 +45,10 @@ config.local.json
 # Users download these on first run
 *.gguf
 models/
+
+# AI/agent tooling (local-only, never commit)
+.serena/
+.claude/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
