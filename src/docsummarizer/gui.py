@@ -633,10 +633,12 @@ class DocSummarizerApp(ctk.CTk):
                 try:
                     summary = summarizer.summarize(text, summary_type=summary_type)
                     output_path = Path(output_folder) / f"{filepath.stem}_summary.txt"
-                    with open(output_path, "w", encoding="utf-8") as f:
-                        f.write(f"Summary of: {filepath.name}\n")
-                        f.write("=" * 50 + "\n\n")
-                        f.write(summary)
+                    write_summary_txt(
+                        output_path,
+                        source_name=filepath.name,
+                        summary=summary,
+                        summary_type=summary_type,
+                    )
                     success_count += 1
                 except Exception as e:
                     log_error(f"Batch processing failed for {filepath}: {e!s}")
@@ -698,14 +700,14 @@ class DocSummarizerApp(ctk.CTk):
         content = self.summary_text.get("1.0", "end-1c")
         self.summary_text.configure(state="disabled")
 
+        source_name = Path(self.current_file).name
         if filepath.endswith(".docx"):
-            from docx import Document
-
-            doc = Document()
-            doc.add_heading(f"Summary: {Path(self.current_file).name}", 0)
-            doc.add_paragraph(content)
-            doc.save(filepath)
+            write_summary_docx(filepath, source_name=source_name, summary=content)
         else:
+            # The on-screen textbox already includes whatever the user is
+            # looking at; writing it verbatim (no header) matches existing
+            # behavior for the manual Save flow. Batch-mode saves do add
+            # a standard header — those go through write_summary_txt.
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
 

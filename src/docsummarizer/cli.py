@@ -77,11 +77,13 @@ def summarize_file(
         if out_file.is_dir():
             out_file = out_file / f"{Path(filepath).stem}_summary.txt"
 
-        with open(out_file, "w", encoding="utf-8") as f:
-            f.write(f"Summary of: {info['name']}\n")
-            f.write(f"Type: {summary_type}\n")
-            f.write("=" * 60 + "\n\n")
-            f.write(summary)
+        write_summary_txt(
+            out_file,
+            source_name=info["name"],
+            summary=summary,
+            summary_type=summary_type,
+            separator_width=60,
+        )
 
         print(f"  Saved to: {out_file}")
     else:
