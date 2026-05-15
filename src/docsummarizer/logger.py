@@ -3,25 +3,24 @@ Logging and Diagnostics Module
 Provides logging functionality and system diagnostics for DocSummarizer.
 """
 
-import os
-import sys
 import logging
+import os
 import platform
-from pathlib import Path
+import sys
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
 
 def get_log_directory() -> Path:
     """Get the directory where logs are stored."""
-    if sys.platform == 'win32':
-        base = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
-    elif sys.platform == 'darwin':
-        base = Path.home() / 'Library' / 'Application Support'
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
     else:
-        base = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share'))
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
 
-    log_dir = base / 'DocSummarizer' / 'logs'
+    log_dir = base / "DocSummarizer" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
@@ -41,11 +40,10 @@ def setup_logger(name: str = "DocSummarizer") -> logging.Logger:
     log_file = log_dir / f"docsummarizer_{datetime.now().strftime('%Y%m%d')}.log"
 
     # File handler - detailed logging
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
@@ -54,14 +52,20 @@ def setup_logger(name: str = "DocSummarizer") -> logging.Logger:
 
 
 # Global logger instance
-_logger: Optional[logging.Logger] = None
+# `_logger_lock` protects the lazy init so two threads calling get_logger()
+# before _logger is set don't both call setup_logger() and end up adding
+# duplicate file handlers to the same logger.
+_logger: logging.Logger | None = None
+_logger_lock = threading.Lock()
 
 
 def get_logger() -> logging.Logger:
     """Get the global logger instance."""
     global _logger
     if _logger is None:
-        _logger = setup_logger()
+        with _logger_lock:
+            if _logger is None:
+                _logger = setup_logger()
     return _logger
 
 
@@ -88,24 +92,25 @@ def log_error(message: str):
 def get_system_info() -> dict:
     """Gather system diagnostic information."""
     info = {
-        'platform': platform.system(),
-        'platform_version': platform.version(),
-        'platform_release': platform.release(),
-        'architecture': platform.machine(),
-        'processor': platform.processor(),
-        'python_version': sys.version,
-        'cpu_count': os.cpu_count(),
+        "platform": platform.system(),
+        "platform_version": platform.version(),
+        "platform_release": platform.release(),
+        "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": sys.version,
+        "cpu_count": os.cpu_count(),
     }
 
     # Try to get memory info
     try:
         import psutil
+
         mem = psutil.virtual_memory()
-        info['total_memory_gb'] = round(mem.total / (1024**3), 2)
-        info['available_memory_gb'] = round(mem.available / (1024**3), 2)
-        info['memory_percent_used'] = mem.percent
+        info["total_memory_gb"] = round(mem.total / (1024**3), 2)
+        info["available_memory_gb"] = round(mem.available / (1024**3), 2)
+        info["memory_percent_used"] = mem.percent
     except ImportError:
-        info['memory_info'] = 'psutil not available'
+        info["memory_info"] = "psutil not available"
 
     return info
 
@@ -123,9 +128,11 @@ def log_system_info():
     logger.info(f"CPU Cores: {info['cpu_count']}")
     logger.info(f"Python: {info['python_version'].split()[0]}")
 
-    if 'total_memory_gb' in info:
+    if "total_memory_gb" in info:
         logger.info(f"Total Memory: {info['total_memory_gb']} GB")
-        logger.info(f"Available Memory: {info['available_memory_gb']} GB ({100 - info['memory_percent_used']:.1f}% free)")
+        logger.info(
+            f"Available Memory: {info['available_memory_gb']} GB ({100 - info['memory_percent_used']:.1f}% free)"
+        )
 
     logger.info("=" * 60)
 
@@ -145,6 +152,7 @@ def get_memory_usage_mb() -> float:
     """Get current process memory usage in MB."""
     try:
         import psutil
+
         process = psutil.Process(os.getpid())
         return round(process.memory_info().rss / (1024**2), 2)
     except ImportError:
@@ -155,6 +163,7 @@ def get_cpu_percent() -> float:
     """Get current process CPU usage percent."""
     try:
         import psutil
+
         process = psutil.Process(os.getpid())
         return process.cpu_percent(interval=0.1)
     except ImportError:

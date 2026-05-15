@@ -21,18 +21,9 @@ DEFAULT_MODEL = {
     "size_gb": 4.4,
 }
 
-# Alternative smaller model for low-resource systems
-SMALL_MODEL = {
-    "repo_id": "TheBloke/Phi-3-mini-4k-instruct-GGUF",
-    "filename": "phi-3-mini-4k-instruct.Q4_K_M.gguf",
-    "name": "Phi-3 Mini",
-    "size_gb": 2.4,
-}
-
 
 def get_models_directory() -> Path:
     """Get the directory where models are stored."""
-    # Use user's home directory for model storage
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     elif sys.platform == "darwin":
@@ -45,16 +36,15 @@ def get_models_directory() -> Path:
     return models_dir
 
 
-def is_model_downloaded(model_config: dict = None) -> bool:
+def is_model_downloaded(model_config: dict | None = None) -> bool:
     """Check if the model file exists locally."""
     if model_config is None:
         model_config = DEFAULT_MODEL
 
-    model_path = get_models_directory() / model_config["filename"]
-    return model_path.exists()
+    return (get_models_directory() / model_config["filename"]).exists()
 
 
-def get_model_path(model_config: dict = None) -> Path:
+def get_model_path(model_config: dict | None = None) -> Path:
     """Get the full path to the model file."""
     if model_config is None:
         model_config = DEFAULT_MODEL
@@ -62,18 +52,42 @@ def get_model_path(model_config: dict = None) -> Path:
     return get_models_directory() / model_config["filename"]
 
 
-def download_model(
-    model_config: dict = None, progress_callback: Callable[[float, str], None] | None = None
-) -> tuple[Path, str | None]:
+def _build_progress_tqdm(callback: Callable[[float, str], None]):
+    """Build a tqdm subclass that fires `callback(percent, message)` on each update.
+
+    huggingface_hub accepts a `tqdm_class` parameter for `hf_hub_download`, but
+    the only "progress" the GUI ever saw was the 0% and 100% sentinels emitted
+    by `download_model`. Wiring a custom tqdm in lets a long (~4.4 GB) download
+    actually update the GUI bar as bytes arrive.
     """
-    Download the model from HuggingFace.
+    from tqdm.auto import tqdm as _BaseTqdm
 
-    Args:
-        model_config: Model configuration dict
-        progress_callback: Optional callback(progress_percent, status_message)
+    class _ProgressTqdm(_BaseTqdm):
+        def update(self, n: int = 1):
+            ret = super().update(n)
+            try:
+                if self.total and self.total > 0:
+                    pct = (self.n / self.total) * 100.0
+                    mb_done = self.n / (1024 * 1024)
+                    mb_total = self.total / (1024 * 1024)
+                    callback(pct, f"Downloading {mb_done:.0f} / {mb_total:.0f} MB")
+            except Exception as exc:
+                # Progress reporting must never break the download itself.
+                log_debug(f"Progress callback raised: {exc!s}")
+            return ret
 
-    Returns:
-        Tuple of (model_path, error_message)
+    return _ProgressTqdm
+
+
+def download_model(
+    model_config: dict | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> tuple[Path, str | None]:
+    """Download the model from HuggingFace.
+
+    Returns ``(model_path, error_message)``; ``error_message`` is None on
+    success. ``progress_callback`` (if given) receives ``(percent, message)``
+    updates as bytes arrive, plus a final 100% / "Download complete" call.
     """
     if model_config is None:
         model_config = DEFAULT_MODEL
@@ -103,12 +117,13 @@ def download_model(
 
         start_time = time.time()
 
-        # Download from HuggingFace
+        tqdm_class = _build_progress_tqdm(progress_callback) if progress_callback else None
+
         downloaded_path = hf_hub_download(
             repo_id=model_config["repo_id"],
             filename=model_config["filename"],
             local_dir=models_dir,
-            local_dir_use_symlinks=False,
+            tqdm_class=tqdm_class,
         )
 
         elapsed = time.time() - start_time
@@ -132,22 +147,25 @@ def download_model(
 class Summarizer:
     """Handles text summarization using the local LLM."""
 
-    def __init__(self, model_path: Path, n_ctx: int = 8192, n_threads: int = None):
-        """
-        Initialize the summarizer with a model.
+    def __init__(self, model_path: Path, n_ctx: int = 8192, n_threads: int | None = None):
+        """Initialize the summarizer with a model.
 
         Args:
             model_path: Path to the GGUF model file
             n_ctx: Context window size (default 8192 for longer documents)
-            n_threads: Number of CPU threads (None = auto)
+            n_threads: Number of CPU threads. `None` = auto (half of available
+                cores). Note: `0` is a legitimate llama.cpp value meaning
+                "let the library decide" and is passed through.
         """
         from llama_cpp import Llama
 
         self.n_ctx = n_ctx
-        # Use half of available cores to reduce CPU load while maintaining decent speed
         cpu_count = os.cpu_count() or 8
         default_threads = max(4, cpu_count // 2)
-        self.n_threads = n_threads or default_threads
+        # Use `is None` rather than truthiness: callers may legitimately pass
+        # `0` to mean "let llama.cpp decide", and `n_threads or default` would
+        # silently override that.
+        self.n_threads = default_threads if n_threads is None else n_threads
 
         log_info("Initializing Summarizer")
         log_info(f"Model path: {model_path}")
@@ -161,7 +179,7 @@ class Summarizer:
             model_path=str(model_path),
             n_ctx=n_ctx,
             n_threads=self.n_threads,
-            n_threads_batch=self.n_threads,  # Also limit batch processing threads
+            n_threads_batch=self.n_threads,
             verbose=False,
         )
 
@@ -174,16 +192,13 @@ class Summarizer:
         text: str,
         summary_type: str = "detailed",
         max_tokens: int = 1024,
-        progress_callback: Callable[[str], None] | None = None,
     ) -> str:
-        """
-        Generate a summary of the given text.
+        """Generate a summary of the given text.
 
         Args:
             text: The text to summarize
             summary_type: "brief", "detailed", or "structured"
             max_tokens: Maximum tokens in the response
-            progress_callback: Optional callback for streaming output
 
         Returns:
             The generated summary
@@ -192,10 +207,11 @@ class Summarizer:
         log_info(f"Starting summarization: type={summary_type}, input_chars={original_length}")
         log_debug(f"Max tokens for response: {max_tokens}")
 
-        # Truncate text if too long for context window
-        # Rough estimate: ~4 chars per token, leave room for prompt (~500 tokens) and response
-        max_input_tokens = self.n_ctx - 1500  # Reserve for prompt and output
-        max_input_chars = max_input_tokens * 3  # Conservative: 3 chars per token
+        # Rough estimate: ~3 chars per token (conservative for the prompt
+        # template); reserve ~1500 tokens for the prompt scaffolding and
+        # response.
+        max_input_tokens = self.n_ctx - 1500
+        max_input_chars = max_input_tokens * 3
         if len(text) > max_input_chars:
             text = text[:max_input_chars] + "\n\n[Document truncated due to length...]"
             log_warning(f"Text truncated from {original_length} to {max_input_chars} chars")
@@ -237,7 +253,6 @@ Structured Summary:""",
         prompt_tokens_estimate = len(prompt) // 3
         log_debug(f"Prompt size: {len(prompt)} chars (~{prompt_tokens_estimate} tokens)")
 
-        # Generate response
         log_info("Generating summary (LLM inference starting)...")
         start_time = time.time()
 
@@ -253,7 +268,6 @@ Structured Summary:""",
         elapsed = time.time() - start_time
         summary = response["choices"][0]["text"].strip()
 
-        # Log performance metrics
         output_tokens = response.get("usage", {}).get("completion_tokens", len(summary) // 4)
         tokens_per_sec = output_tokens / elapsed if elapsed > 0 else 0
 

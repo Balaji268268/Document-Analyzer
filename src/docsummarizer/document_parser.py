@@ -3,9 +3,8 @@ Document Parser Module
 Extracts text from various document formats: PDF, DOCX, TXT, RTF
 """
 
-import os
 from pathlib import Path
-from typing import Optional
+
 import chardet
 
 
@@ -49,7 +48,7 @@ def extract_from_rtf(file_path: str) -> str:
     """Extract text from an RTF file."""
     from striprtf.striprtf import rtf_to_text
 
-    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(file_path, encoding="utf-8", errors="ignore") as f:
         rtf_content = f.read()
 
     return rtf_to_text(rtf_content)
@@ -57,16 +56,16 @@ def extract_from_rtf(file_path: str) -> str:
 
 def extract_from_txt(file_path: str) -> str:
     """Extract text from a plain text file with encoding detection."""
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         raw_data = f.read()
 
     detected = chardet.detect(raw_data)
-    encoding = detected.get('encoding', 'utf-8') or 'utf-8'
+    encoding = detected.get("encoding", "utf-8") or "utf-8"
 
-    return raw_data.decode(encoding, errors='replace')
+    return raw_data.decode(encoding, errors="replace")
 
 
-def extract_text(file_path: str) -> tuple[str, Optional[str]]:
+def extract_text(file_path: str) -> tuple[str, str | None]:
     """
     Extract text from a document file.
 
@@ -84,14 +83,16 @@ def extract_text(file_path: str) -> tuple[str, Optional[str]]:
 
     suffix = path.suffix.lower()
 
+    # Legacy binary `.doc` (OLE compound) is not handled — python-docx only
+    # reads the XML-based `.docx` format. The prior mapping `.doc -> docx`
+    # silently failed on real `.doc` files.
     extractors = {
-        '.pdf': extract_from_pdf,
-        '.docx': extract_from_docx,
-        '.doc': extract_from_docx,  # May work for some .doc files
-        '.rtf': extract_from_rtf,
-        '.txt': extract_from_txt,
-        '.md': extract_from_txt,
-        '.text': extract_from_txt,
+        ".pdf": extract_from_pdf,
+        ".docx": extract_from_docx,
+        ".rtf": extract_from_rtf,
+        ".txt": extract_from_txt,
+        ".md": extract_from_txt,
+        ".text": extract_from_txt,
     }
 
     extractor = extractors.get(suffix)
@@ -105,26 +106,36 @@ def extract_text(file_path: str) -> tuple[str, Optional[str]]:
             return "", "No text could be extracted from the document"
         return text, None
     except Exception as e:
-        return "", f"Error extracting text: {str(e)}"
+        return "", f"Error extracting text: {e!s}"
 
 
 def get_document_info(file_path: str) -> dict:
     """Get basic information about a document."""
     path = Path(file_path)
 
+    # Call stat() once. The previous code called .stat() twice independently,
+    # which can race on network filesystems (file disappears between calls,
+    # raising FileNotFoundError on the second call).
+    try:
+        size_bytes = path.stat().st_size
+    except FileNotFoundError:
+        size_bytes = 0
+
     return {
-        'name': path.name,
-        'extension': path.suffix.lower(),
-        'size_bytes': path.stat().st_size if path.exists() else 0,
-        'size_mb': round(path.stat().st_size / (1024 * 1024), 2) if path.exists() else 0,
+        "name": path.name,
+        "extension": path.suffix.lower(),
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / (1024 * 1024), 2),
     }
 
 
-# Supported extensions for file dialogs
+# Supported extensions for file dialogs. Legacy binary `.doc` is intentionally
+# excluded: python-docx cannot read OLE compound documents — only the XML-based
+# `.docx` format — and the previous mapping silently failed on real `.doc`s.
 SUPPORTED_EXTENSIONS = [
-    ("All Supported", "*.pdf *.docx *.doc *.rtf *.txt *.md"),
+    ("All Supported", "*.pdf *.docx *.rtf *.txt *.md"),
     ("PDF Files", "*.pdf"),
-    ("Word Documents", "*.docx *.doc"),
+    ("Word Documents", "*.docx"),
     ("RTF Files", "*.rtf"),
     ("Text Files", "*.txt *.md"),
 ]
