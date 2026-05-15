@@ -38,7 +38,8 @@ jobs:
       # exists for this (python, OS) combo rather than burning 10+ minutes on
       # a build that will probably fail anyway.
       - name: Install package + dev extras
-        run: pip install --only-binary=:all: -e ".[dev]"
+        # Quoted because `:all:` would otherwise be parsed as a YAML mapping.
+        run: 'pip install --only-binary=:all: -e ".[dev]"'
 
       - name: Lint (ruff)
         run: ruff check .
