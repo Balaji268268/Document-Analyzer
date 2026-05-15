@@ -1,6 +1,12 @@
 """
 Document Parser Module
-Extracts text from various document formats: PDF, DOCX, TXT, RTF
+Extracts text from various document formats: PDF, DOCX, TXT, RTF.
+
+Legacy binary `.doc` (OLE compound) is intentionally not supported —
+python-docx only reads the XML-based `.docx` format. The single
+source-of-truth for "what we can parse" is `SUPPORTED_EXTENSION_SET`
+below; dialog filters (`SUPPORTED_EXTENSIONS`), the extractor dispatch
+in `extract_text`, and CLI directory scans all derive from it.
 """
 
 from pathlib import Path
@@ -34,7 +40,6 @@ def extract_from_docx(file_path: str) -> str:
         if paragraph.text.strip():
             text_parts.append(paragraph.text)
 
-    # Also extract text from tables
     for table in doc.tables:
         for row in table.rows:
             row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
@@ -65,40 +70,36 @@ def extract_from_txt(file_path: str) -> str:
     return raw_data.decode(encoding, errors="replace")
 
 
-def extract_text(file_path: str) -> tuple[str, str | None]:
-    """
-    Extract text from a document file.
+_EXTRACTORS = {
+    ".pdf": extract_from_pdf,
+    ".docx": extract_from_docx,
+    ".rtf": extract_from_rtf,
+    ".txt": extract_from_txt,
+    ".md": extract_from_txt,
+    ".text": extract_from_txt,
+}
 
-    Args:
-        file_path: Path to the document
+# Canonical set of supported extensions. Single source of truth — the
+# dispatch above, the dialog filters below, and `find_documents` all
+# read from it.
+SUPPORTED_EXTENSION_SET: frozenset[str] = frozenset(_EXTRACTORS.keys())
+
+
+def extract_text(file_path: str) -> tuple[str, str | None]:
+    """Extract text from a document file.
 
     Returns:
-        Tuple of (extracted_text, error_message)
-        If successful, error_message is None
+        Tuple of (extracted_text, error_message). error_message is None on
+        success; extracted_text is empty on failure.
     """
     path = Path(file_path)
 
     if not path.exists():
         return "", f"File not found: {file_path}"
 
-    suffix = path.suffix.lower()
-
-    # Legacy binary `.doc` (OLE compound) is not handled — python-docx only
-    # reads the XML-based `.docx` format. The prior mapping `.doc -> docx`
-    # silently failed on real `.doc` files.
-    extractors = {
-        ".pdf": extract_from_pdf,
-        ".docx": extract_from_docx,
-        ".rtf": extract_from_rtf,
-        ".txt": extract_from_txt,
-        ".md": extract_from_txt,
-        ".text": extract_from_txt,
-    }
-
-    extractor = extractors.get(suffix)
-
+    extractor = _EXTRACTORS.get(path.suffix.lower())
     if extractor is None:
-        return "", f"Unsupported file format: {suffix}"
+        return "", f"Unsupported file format: {path.suffix.lower()}"
 
     try:
         text = extractor(file_path)
@@ -113,9 +114,8 @@ def get_document_info(file_path: str) -> dict:
     """Get basic information about a document."""
     path = Path(file_path)
 
-    # Call stat() once. The previous code called .stat() twice independently,
-    # which can race on network filesystems (file disappears between calls,
-    # raising FileNotFoundError on the second call).
+    # Single stat() call; the previous code stat()'d twice and could race
+    # on network filesystems (FileNotFoundError on the second call).
     try:
         size_bytes = path.stat().st_size
     except FileNotFoundError:
@@ -129,9 +129,20 @@ def get_document_info(file_path: str) -> dict:
     }
 
 
-# Supported extensions for file dialogs. Legacy binary `.doc` is intentionally
-# excluded: python-docx cannot read OLE compound documents — only the XML-based
-# `.docx` format — and the previous mapping silently failed on real `.doc`s.
+def find_documents(path: Path) -> list[Path]:
+    """Find all supported documents at `path`.
+
+    If `path` is a single file, returns it (or empty if unsupported).
+    If `path` is a directory, returns its supported files (non-recursive).
+    """
+    if path.is_file():
+        return [path] if path.suffix.lower() in SUPPORTED_EXTENSION_SET else []
+    return [
+        f for f in path.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSION_SET
+    ]
+
+
+# Dialog filter list, derived from SUPPORTED_EXTENSION_SET so it can't drift.
 SUPPORTED_EXTENSIONS = [
     ("All Supported", "*.pdf *.docx *.rtf *.txt *.md"),
     ("PDF Files", "*.pdf"),

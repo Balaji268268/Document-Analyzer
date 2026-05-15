@@ -14,11 +14,18 @@ from typing import Any
 
 import customtkinter as ctk
 
-from .document_parser import extract_text, get_document_info
+from .document_parser import (
+    SUPPORTED_EXTENSIONS,
+    extract_text,
+    find_documents,
+    get_document_info,
+)
 from .io_helpers import write_summary_docx, write_summary_txt
 from .logger import log_debug, log_error, log_info, log_startup
 from .model_manager import (
     DEFAULT_MODEL,
+    SUMMARY_TYPE_DETAILED,
+    SUMMARY_TYPES,
     Summarizer,
     download_model,
     get_model_path,
@@ -28,6 +35,12 @@ from .model_manager import (
 # Appearance settings
 ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
 ctk.set_default_color_theme("blue")
+
+# Status-bar color tokens. Used by `_set_status` so the call sites read like
+# `self._set_status("Ready", STATUS_OK)` instead of repeating literals.
+STATUS_OK = "green"
+STATUS_ERROR = "red"
+STATUS_WARN = "orange"
 
 
 class LoadingDialog(ctk.CTkToplevel):
@@ -88,10 +101,9 @@ class DocSummarizerApp(ctk.CTk):
         self.geometry("900x700")
         self.minsize(700, 500)
 
-        # `_summarizer` is touched by worker threads (load, reload, download
-        # completion) and the main UI thread (button-state checks, summarize
-        # action). All access goes through _get_summarizer / _set_summarizer
-        # so we never read a half-assigned reference.
+        # `_summarizer` is touched by worker threads (load, reload, download)
+        # and the main UI thread (button state, summarize action). All access
+        # goes through _get_summarizer / _set_summarizer.
         self._summarizer: Summarizer | None = None
         self._summarizer_lock = threading.RLock()
 
@@ -120,6 +132,13 @@ class DocSummarizerApp(ctk.CTk):
         """
         self.after(0, lambda: fn(*args, **kwargs))
 
+    def _set_status(self, text: str, color: str | None = None) -> None:
+        """Set the header status label (main thread only)."""
+        if color is None:
+            self.status_label.configure(text=text)
+        else:
+            self.status_label.configure(text=text, text_color=color)
+
     def _get_summarizer(self) -> Summarizer | None:
         with self._summarizer_lock:
             return self._summarizer
@@ -129,8 +148,7 @@ class DocSummarizerApp(ctk.CTk):
             old = self._summarizer
             self._summarizer = summarizer
         if old is not None and old is not summarizer:
-            # Release llama.cpp memory eagerly; __del__ is best-effort
-            del old
+            old.close()
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -231,11 +249,11 @@ class DocSummarizerApp(ctk.CTk):
         self.summary_type_label = ctk.CTkLabel(self.controls_frame, text="Summary Type:")
         self.summary_type_label.grid(row=0, column=0, padx=(10, 5), pady=10)
 
-        self.summary_type_var = ctk.StringVar(value="detailed")
+        self.summary_type_var = ctk.StringVar(value=SUMMARY_TYPE_DETAILED)
         self.summary_type_menu = ctk.CTkOptionMenu(
             self.controls_frame,
             variable=self.summary_type_var,
-            values=["brief", "detailed", "structured"],
+            values=list(SUMMARY_TYPES),
             width=120,
         )
         self.summary_type_menu.grid(row=0, column=1, padx=5, pady=10, sticky="w")
@@ -371,35 +389,30 @@ class DocSummarizerApp(ctk.CTk):
     def _check_model_status(self):
         """Check if the model is downloaded and update UI accordingly."""
         if is_model_downloaded():
-            self.status_label.configure(text="Model ready", text_color="green")
+            self._set_status("Model ready", STATUS_OK)
             self.model_info_label.configure(
-                text=f"Model: {DEFAULT_MODEL['name']} ({DEFAULT_MODEL['size_gb']} GB) - Downloaded"
+                text=f"Model: {DEFAULT_MODEL.name} ({DEFAULT_MODEL.size_gb} GB) - Downloaded"
             )
             self.download_btn.configure(state="disabled", text="Model Downloaded")
             self._load_model()
         else:
-            self.status_label.configure(text="Model not downloaded", text_color="orange")
+            self._set_status("Model not downloaded", STATUS_WARN)
             self.model_info_label.configure(
-                text=f"Model: {DEFAULT_MODEL['name']} ({DEFAULT_MODEL['size_gb']} GB) - Not downloaded"
+                text=f"Model: {DEFAULT_MODEL.name} ({DEFAULT_MODEL.size_gb} GB) - Not downloaded"
             )
             self.download_btn.configure(state="normal")
 
     def _load_model(self):
         """Load the model in a background thread."""
         n_threads = self.threads_var.get()
-        # Show a loading dialog so the user has feedback during the
-        # multi-second model load. _reload_model already did this; the
-        # initial load was missing it.
         self._initial_load_dialog = LoadingDialog(self, f"Loading model ({n_threads} threads)...")
-        # Disable file-selection buttons until the model is ready.
         self.select_btn.configure(state="disabled")
         self.select_folder_btn.configure(state="disabled")
-        self.status_label.configure(text=f"Loading model ({n_threads} threads)...")
+        self._set_status(f"Loading model ({n_threads} threads)...")
 
         def load():
             try:
-                model_path = get_model_path()
-                summarizer = Summarizer(model_path, n_threads=n_threads)
+                summarizer = Summarizer(get_model_path(), n_threads=n_threads)
                 self._set_summarizer(summarizer)
                 self._ui(self._on_load_complete, True, None)
             except Exception as e:
@@ -416,11 +429,11 @@ class DocSummarizerApp(ctk.CTk):
         self.select_btn.configure(state="normal")
         self.select_folder_btn.configure(state="normal")
         if success:
-            self.status_label.configure(text="Ready", text_color="green")
+            self._set_status("Ready", STATUS_OK)
             self.reload_model_btn.configure(state="disabled")
             self._update_button_states()
         else:
-            self.status_label.configure(text=f"Error loading model: {error}", text_color="red")
+            self._set_status(f"Error loading model: {error}", STATUS_ERROR)
 
     def _on_threads_changed(self, _value):
         """Handle CPU threads slider change."""
@@ -440,8 +453,7 @@ class DocSummarizerApp(ctk.CTk):
         def reload():
             try:
                 self._set_summarizer(None)
-                model_path = get_model_path()
-                summarizer = Summarizer(model_path, n_threads=n_threads)
+                summarizer = Summarizer(get_model_path(), n_threads=n_threads)
                 self._set_summarizer(summarizer)
                 self._ui(self._on_reload_complete, loading, True, None)
             except Exception as e:
@@ -456,26 +468,31 @@ class DocSummarizerApp(ctk.CTk):
         """Handle model reload completion (main thread)."""
         loading_dialog.close()
         if success:
-            self.status_label.configure(text="Ready", text_color="green")
+            self._set_status("Ready", STATUS_OK)
             self.reload_model_btn.configure(state="disabled")
             self._update_button_states()
         else:
-            self.status_label.configure(text=f"Error: {error}", text_color="red")
+            self._set_status(f"Error: {error}", STATUS_ERROR)
 
     def _start_model_download(self):
         """Start downloading the model in a background thread."""
         self.download_btn.configure(state="disabled", text="Downloading...")
         self.progress_bar.set(0)
 
+        def apply_progress(percent: float, message: str) -> None:
+            self.progress_bar.set(percent / 100)
+            self._set_status(message)
+
         def on_progress(percent: float, message: str) -> None:
-            # Called from huggingface_hub's download thread. Marshal to UI.
-            self._ui(self.progress_bar.set, percent / 100)
-            self._ui(self.status_label.configure, text=message)
+            # Called from huggingface_hub's download thread (one call per
+            # whole-MB step, throttled by _ProgressTqdm). Single marshal
+            # updates both the progress bar and the status label.
+            self._ui(apply_progress, percent, message)
 
         def download():
             _path, error = download_model(progress_callback=on_progress)
             if error:
-                self._ui(self.status_label.configure, text=error, text_color="red")
+                self._ui(self._set_status, error, STATUS_ERROR)
                 self._ui(self.download_btn.configure, state="normal", text="Retry Download")
             else:
                 self._ui(self.download_btn.configure, text="Model Downloaded")
@@ -489,40 +506,25 @@ class DocSummarizerApp(ctk.CTk):
 
     def _select_file(self):
         """Open file dialog to select a document."""
-        filetypes = [
-            ("All Supported", "*.pdf *.docx *.rtf *.txt *.md"),
-            ("PDF Files", "*.pdf"),
-            ("Word Documents", "*.docx"),
-            ("Text Files", "*.txt *.md *.rtf"),
-        ]
-
-        filepath = filedialog.askopenfilename(title="Select Document", filetypes=filetypes)
-
+        filepath = filedialog.askopenfilename(
+            title="Select Document", filetypes=SUPPORTED_EXTENSIONS
+        )
         if filepath:
             self._process_file(filepath)
 
     def _select_folder(self):
         """Open folder dialog for batch processing."""
         folder = filedialog.askdirectory(title="Select Folder with Documents")
+        if not folder:
+            return
 
-        if folder:
-            extensions = (".pdf", ".docx", ".rtf", ".txt", ".md")
-            files = [
-                f for f in Path(folder).iterdir() if f.is_file() and f.suffix.lower() in extensions
-            ]
+        files = find_documents(Path(folder))
+        if not files:
+            messagebox.showinfo("No Files", "No supported documents found in the selected folder.")
+            return
 
-            if not files:
-                messagebox.showinfo(
-                    "No Files", "No supported documents found in the selected folder."
-                )
-                return
-
-            result = messagebox.askyesno(
-                "Batch Processing", f"Found {len(files)} document(s). Process all?"
-            )
-
-            if result:
-                self._batch_process(files)
+        if messagebox.askyesno("Batch Processing", f"Found {len(files)} document(s). Process all?"):
+            self._batch_process(files)
 
     def _process_file(self, filepath: str):
         """Extract text from the selected file."""
@@ -530,15 +532,15 @@ class DocSummarizerApp(ctk.CTk):
         info = get_document_info(filepath)
         self.file_label.configure(text=f"{info['name']} ({info['size_mb']} MB)")
 
-        self.status_label.configure(text="Extracting text...")
+        self._set_status("Extracting text...")
         text, error = extract_text(filepath)
 
         if error:
-            self.status_label.configure(text=error, text_color="red")
+            self._set_status(error, STATUS_ERROR)
             self.extracted_text = None
         else:
             self.extracted_text = text
-            self.status_label.configure(text="Text extracted", text_color="green")
+            self._set_status("Text extracted", STATUS_OK)
 
             self.extracted_textbox.configure(state="normal")
             self.extracted_textbox.delete("1.0", "end")
@@ -567,7 +569,7 @@ class DocSummarizerApp(ctk.CTk):
 
         self.summarize_btn.configure(state="disabled", text="Processing...")
         self.progress_bar.set(0.3)
-        self.status_label.configure(text="Generating summary...")
+        self._set_status("Generating summary...")
 
         def summarize():
             try:
@@ -583,10 +585,10 @@ class DocSummarizerApp(ctk.CTk):
         """Render summarization result on the main thread."""
         try:
             if error is not None:
-                self.status_label.configure(text=f"Error: {error}", text_color="red")
+                self._set_status(f"Error: {error}", STATUS_ERROR)
                 return
             self.progress_bar.set(1.0)
-            self.status_label.configure(text="Summary complete", text_color="green")
+            self._set_status("Summary complete", STATUS_OK)
             self.summary_text.configure(state="normal")
             self.summary_text.delete("1.0", "end")
             self.summary_text.insert("1.0", summary or "")
@@ -611,6 +613,10 @@ class DocSummarizerApp(ctk.CTk):
         summary_type = self.summary_type_var.get()
         self.summarize_btn.configure(state="disabled")
 
+        def apply_batch_progress(text: str, value: float) -> None:
+            self._set_status(text)
+            self.progress_bar.set(value)
+
         def process_batch():
             total = len(files)
             success_count = 0
@@ -618,10 +624,10 @@ class DocSummarizerApp(ctk.CTk):
 
             for i, filepath in enumerate(files):
                 self._ui(
-                    self.status_label.configure,
-                    text=f"Processing {i + 1}/{total}: {filepath.name}",
+                    apply_batch_progress,
+                    f"Processing {i + 1}/{total}: {filepath.name}",
+                    (i + 0.5) / total,
                 )
-                self._ui(self.progress_bar.set, (i + 0.5) / total)
 
                 text, error = extract_text(str(filepath))
                 if error:
@@ -656,9 +662,9 @@ class DocSummarizerApp(ctk.CTk):
         output_folder: str,
     ) -> None:
         """Render batch completion on the main thread."""
-        self.status_label.configure(
-            text=f"Batch complete: {success_count}/{total} files summarized",
-            text_color="green" if success_count == total else "orange",
+        self._set_status(
+            f"Batch complete: {success_count}/{total} files summarized",
+            STATUS_OK if success_count == total else STATUS_WARN,
         )
         self.summarize_btn.configure(state="normal")
 
@@ -702,14 +708,14 @@ class DocSummarizerApp(ctk.CTk):
         if filepath.endswith(".docx"):
             write_summary_docx(filepath, source_name=source_name, summary=content)
         else:
-            # The on-screen textbox already includes whatever the user is
-            # looking at; writing it verbatim (no header) matches existing
-            # behavior for the manual Save flow. Batch-mode saves do add
-            # a standard header — those go through write_summary_txt.
+            # Manual Save writes the textbox content verbatim (no header).
+            # Batch mode does add a header via write_summary_txt; the
+            # asymmetry is deliberate because the user already sees the
+            # content in the textbox.
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        self.status_label.configure(text=f"Saved: {Path(filepath).name}", text_color="green")
+        self._set_status(f"Saved: {Path(filepath).name}", STATUS_OK)
 
     def _change_appearance(self, mode: str):
         """Change the application appearance mode."""

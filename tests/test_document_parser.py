@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 from docsummarizer.document_parser import (
-    SUPPORTED_EXTENSIONS,
+    SUPPORTED_EXTENSION_SET,
     extract_text,
+    find_documents,
     get_document_info,
 )
 
@@ -39,13 +40,11 @@ def test_extract_txt_utf8(tmp_path: Path) -> None:
 
 def test_extract_txt_latin1_encoding_detection(tmp_path: Path) -> None:
     target = tmp_path / "latin.txt"
-    # Write text that's not valid UTF-8 — chardet should pick up latin-1
-    # (or similar) and decode it.
     target.write_bytes("caf\xe9 m\xfcnchen\n".encode("latin-1"))
     text, error = extract_text(str(target))
     assert error is None
-    # We don't promise exact decoding, only that we got *something*
-    # printable and didn't choke.
+    # We don't promise exact decoding — only that we got *something*
+    # printable and didn't choke on the encoding mismatch.
     assert "caf" in text.lower()
 
 
@@ -90,19 +89,17 @@ def test_legacy_doc_not_supported(tmp_path: Path) -> None:
     assert "Unsupported" in error
 
 
-def test_supported_extensions_excludes_doc() -> None:
-    """Dialog filter must match the parser dispatch."""
-    all_listed = " ".join(f for _label, f in SUPPORTED_EXTENSIONS)
-    assert "*.doc " not in all_listed
-    assert "*.doc," not in all_listed
-    # `.docx` should still appear (substring is fine; we just want absence of
-    # the bare `.doc` token).
+def test_supported_extension_set_canonical() -> None:
+    """The canonical set is the single source of truth — assert against it
+    directly rather than parsing the dialog-filter strings."""
+    assert ".doc" not in SUPPORTED_EXTENSION_SET
+    assert ".docx" in SUPPORTED_EXTENSION_SET
+    assert {".pdf", ".docx", ".rtf", ".txt", ".md", ".text"} == SUPPORTED_EXTENSION_SET
 
 
 def test_get_document_info_existing(tmp_path: Path) -> None:
     target = tmp_path / "f.txt"
-    payload = b"x" * 2048  # exactly 2 KiB
-    target.write_bytes(payload)
+    target.write_bytes(b"x" * 2048)
 
     info = get_document_info(str(target))
     assert info["name"] == "f.txt"
@@ -115,3 +112,26 @@ def test_get_document_info_missing(tmp_path: Path) -> None:
     info = get_document_info(str(tmp_path / "missing.txt"))
     assert info["size_bytes"] == 0
     assert info["size_mb"] == 0
+
+
+def test_find_documents_on_single_supported_file(tmp_path: Path) -> None:
+    target = tmp_path / "report.pdf"
+    target.write_bytes(b"%PDF-")
+    assert find_documents(target) == [target]
+
+
+def test_find_documents_on_single_unsupported_file(tmp_path: Path) -> None:
+    target = tmp_path / "thing.xyz"
+    target.write_text("nope")
+    assert find_documents(target) == []
+
+
+def test_find_documents_in_directory_filters_to_supported(tmp_path: Path) -> None:
+    (tmp_path / "a.pdf").write_bytes(b"")
+    (tmp_path / "b.docx").write_bytes(b"")
+    (tmp_path / "c.exe").write_bytes(b"")
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "ignored.pdf").write_bytes(b"")  # non-recursive
+
+    found = {p.name for p in find_documents(tmp_path)}
+    assert found == {"a.pdf", "b.docx"}

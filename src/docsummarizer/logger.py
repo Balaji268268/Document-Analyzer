@@ -11,36 +11,26 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from .paths import app_data_dir
+
 
 def get_log_directory() -> Path:
     """Get the directory where logs are stored."""
-    if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-
-    log_dir = base / "DocSummarizer" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    return log_dir
+    return app_data_dir("logs")
 
 
 def setup_logger(name: str = "DocSummarizer") -> logging.Logger:
     """Set up and return a logger that writes to file and optionally console."""
     logger = logging.getLogger(name)
 
-    # Avoid adding handlers multiple times
     if logger.handlers:
         return logger
 
     logger.setLevel(logging.DEBUG)
 
-    # Create log file with date
     log_dir = get_log_directory()
     log_file = log_dir / f"docsummarizer_{datetime.now().strftime('%Y%m%d')}.log"
 
-    # File handler - detailed logging
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
@@ -52,10 +42,9 @@ def setup_logger(name: str = "DocSummarizer") -> logging.Logger:
     return logger
 
 
-# Global logger instance
 # `_logger_lock` protects the lazy init so two threads calling get_logger()
-# before _logger is set don't both call setup_logger() and end up adding
-# duplicate file handlers to the same logger.
+# before _logger is set don't both call setup_logger() and add duplicate
+# FileHandlers (every message would then be written twice).
 _logger: logging.Logger | None = None
 _logger_lock = threading.Lock()
 
@@ -102,7 +91,6 @@ def get_system_info() -> dict:
         "cpu_count": os.cpu_count(),
     }
 
-    # Try to get memory info
     try:
         import psutil
 
@@ -132,7 +120,8 @@ def log_system_info():
     if "total_memory_gb" in info:
         logger.info(f"Total Memory: {info['total_memory_gb']} GB")
         logger.info(
-            f"Available Memory: {info['available_memory_gb']} GB ({100 - info['memory_percent_used']:.1f}% free)"
+            f"Available Memory: {info['available_memory_gb']} GB "
+            f"({100 - info['memory_percent_used']:.1f}% free)"
         )
 
     logger.info("=" * 60)
@@ -193,4 +182,4 @@ class Timer:
         else:
             log_info(f"Completed: {self.operation_name} in {duration:.2f}s")
 
-        return False  # Don't suppress exceptions
+        return False

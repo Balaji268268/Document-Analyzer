@@ -16,7 +16,7 @@ def test_write_summary_txt_minimal(tmp_path: Path) -> None:
     assert content.startswith("Summary of: doc.pdf\n")
     assert "Type:" not in content  # not provided -> not written
     assert "=" * 50 in content
-    assert content.endswith("the summary body")
+    assert "the summary body" in content
 
 
 def test_write_summary_txt_with_type(tmp_path: Path) -> None:

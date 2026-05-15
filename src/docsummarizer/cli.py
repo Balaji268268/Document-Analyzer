@@ -8,10 +8,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from .document_parser import extract_text, get_document_info
+from .document_parser import extract_text, find_documents, get_document_info
 from .io_helpers import write_summary_txt
 from .model_manager import (
     DEFAULT_MODEL,
+    SUMMARY_TYPE_DETAILED,
+    SUMMARY_TYPES,
     Summarizer,
     download_model,
     get_model_path,
@@ -34,9 +36,7 @@ def ensure_model() -> bool:
     if is_model_downloaded():
         return True
 
-    print(
-        f"Model not found. Downloading {DEFAULT_MODEL['name']} ({DEFAULT_MODEL['size_gb']} GB)..."
-    )
+    print(f"Model not found. Downloading {DEFAULT_MODEL.name} ({DEFAULT_MODEL.size_gb} GB)...")
     print("This is a one-time download.\n")
 
     _path, error = download_model(progress_callback=print_progress)
@@ -52,14 +52,13 @@ def ensure_model() -> bool:
 def summarize_file(
     filepath: str,
     summarizer: Summarizer,
-    summary_type: str = "detailed",
+    summary_type: str = SUMMARY_TYPE_DETAILED,
     output_path: str | None = None,
 ) -> bool:
     """Summarize a single file."""
     info = get_document_info(filepath)
     print(f"Processing: {info['name']} ({info['size_mb']} MB)")
 
-    # Extract text
     text, error = extract_text(filepath)
     if error:
         print(f"  Error: {error}")
@@ -67,7 +66,6 @@ def summarize_file(
 
     print(f"  Extracted {len(text)} characters")
 
-    # Generate summary
     print("  Generating summary...")
     try:
         summary = summarizer.summarize(text, summary_type=summary_type)
@@ -75,7 +73,6 @@ def summarize_file(
         print(f"  Error: {e!s}")
         return False
 
-    # Output
     if output_path:
         out_file = Path(output_path)
         if out_file.is_dir():
@@ -100,16 +97,6 @@ def summarize_file(
     return True
 
 
-def find_documents(path: Path) -> list[Path]:
-    """Find all supported documents in a directory."""
-    extensions = (".pdf", ".docx", ".doc", ".rtf", ".txt", ".md")
-
-    if path.is_file():
-        return [path] if path.suffix.lower() in extensions else []
-
-    return [f for f in path.iterdir() if f.is_file() and f.suffix.lower() in extensions]
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="DocSummarizer - Offline Document Summarization",
@@ -125,16 +112,16 @@ Examples:
 
     parser.add_argument(
         "input",
-        nargs="?",  # Optional when using --download-only
+        nargs="?",
         help="Input file or directory to process",
     )
 
     parser.add_argument(
         "-t",
         "--type",
-        choices=["brief", "detailed", "structured"],
-        default="detailed",
-        help="Summary type (default: detailed)",
+        choices=list(SUMMARY_TYPES),
+        default=SUMMARY_TYPE_DETAILED,
+        help=f"Summary type (default: {SUMMARY_TYPE_DETAILED})",
     )
 
     parser.add_argument(
@@ -147,7 +134,6 @@ Examples:
 
     args = parser.parse_args()
 
-    # Ensure model is available
     if not ensure_model():
         sys.exit(1)
 
@@ -155,11 +141,9 @@ Examples:
         print("Model is ready.")
         sys.exit(0)
 
-    # Check that input was provided
     if args.input is None:
         parser.error("the following arguments are required: input")
 
-    # Find files to process
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"Error: Path does not exist: {args.input}")
@@ -170,7 +154,6 @@ Examples:
         print(f"Error: No supported documents found in: {args.input}")
         sys.exit(1)
 
-    # Load model
     print("Loading model...")
     try:
         summarizer = Summarizer(get_model_path())
@@ -180,12 +163,14 @@ Examples:
 
     print(f"Model loaded. Processing {len(files)} file(s)...\n")
 
-    # Process files
     success_count = 0
-    for filepath in files:
-        if summarize_file(str(filepath), summarizer, args.type, args.output):
-            success_count += 1
-        print()
+    try:
+        for filepath in files:
+            if summarize_file(str(filepath), summarizer, args.type, args.output):
+                success_count += 1
+            print()
+    finally:
+        summarizer.close()
 
     print(f"Done. Successfully processed {success_count}/{len(files)} file(s).")
 
