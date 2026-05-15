@@ -25,6 +25,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Require Python 3.10+ (pyproject.toml says so, and the codebase uses
+REM PEP 604 `X | None` type hints).
+python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
+if errorlevel 1 (
+    for /f "tokens=*" %%i in ('python --version') do set PYVER=%%i
+    echo  [ERROR] %PYVER% is too old. DocSummarizer requires Python 3.10 or later.
+    pause
+    exit /b 1
+)
+
 for /f "tokens=*" %%i in ('python --version') do set PYVER=%%i
 echo  [OK] %PYVER% found
 echo.
@@ -54,16 +64,19 @@ call venv\Scripts\activate.bat
 REM Check if dependencies need to be installed
 pip show llama-cpp-python >nul 2>&1
 if errorlevel 1 (
-    echo  [2/3] Installing dependencies...
+    echo  [2/3] Installing DocSummarizer + dependencies...
     echo       This may take 5-10 minutes on first run.
     echo       (Compiling AI engine for your system)
     echo.
     echo       Please wait...
     echo.
-    pip install -r requirements.txt --quiet
+    REM Note: no --quiet. The llama-cpp-python compile is the slow step; if it
+    REM fails, we want the user to see the actual error rather than a generic
+    REM "Failed to install dependencies" message.
+    pip install -e .
     if errorlevel 1 (
         echo.
-        echo  [ERROR] Failed to install dependencies.
+        echo  [ERROR] Failed to install dependencies. See output above.
         pause
         exit /b 1
     )
