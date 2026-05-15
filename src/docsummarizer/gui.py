@@ -3,6 +3,7 @@ DocSummarizer GUI
 Modern cross-platform GUI using CustomTkinter.
 """
 
+import contextlib
 import os
 import sys
 import threading
@@ -14,6 +15,7 @@ from typing import Any
 import customtkinter as ctk
 
 from .document_parser import extract_text, get_document_info
+from .io_helpers import write_summary_docx, write_summary_txt
 from .logger import log_debug, log_error, log_info, log_startup
 from .model_manager import (
     DEFAULT_MODEL,
@@ -144,10 +146,8 @@ class DocSummarizerApp(ctk.CTk):
 
         for widget in self.winfo_children():
             if isinstance(widget, ctk.CTkToplevel):
-                try:
+                with contextlib.suppress(Exception):
                     widget.destroy()
-                except Exception:
-                    pass
 
         if self._get_summarizer() is not None:
             log_debug("Releasing model from memory")
@@ -155,10 +155,8 @@ class DocSummarizerApp(ctk.CTk):
 
         log_info("Application closed")
 
-        try:
+        with contextlib.suppress(Exception):
             self.destroy()
-        except Exception:
-            pass
 
         sys.exit(0)
 

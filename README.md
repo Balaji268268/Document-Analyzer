@@ -6,7 +6,7 @@ A fully offline document summarization tool powered by a local AI model. Designe
 
 - **100% Offline**: After the initial model download, everything runs locally on your machine
 - **Privacy-First**: Documents never leave your computer - no cloud services, no data collection
-- **Multiple Formats**: Supports PDF, DOCX, DOC, RTF, TXT, and Markdown files
+- **Multiple Formats**: Supports PDF, DOCX, RTF, TXT, and Markdown files
 - **Batch Processing**: Summarize entire folders of documents at once
 - **Flexible Output**: Choose between brief, detailed, or structured summaries
 - **Cross-Platform**: Works on Windows, macOS, and Linux
@@ -22,7 +22,7 @@ A fully offline document summarization tool powered by a local AI model. Designe
 | CPU | 4 cores | 8+ cores |
 | Python | 3.10+ | 3.11+ |
 
-**Note**: The tool runs on CPU by default. GPU acceleration is optional (see Advanced section).
+**Note**: The tool runs on CPU by default. GPU acceleration is optional — see [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions.
 
 ## Quick Start
 
@@ -82,21 +82,21 @@ After setup, the GUI will open automatically.
 
 ```bash
 # Summarize a single file
-python src/cli.py document.pdf
+docsummarizer-cli document.pdf
 
 # Choose summary type
-python src/cli.py document.pdf -t structured
-python src/cli.py document.pdf -t brief
-python src/cli.py document.pdf -t detailed
+docsummarizer-cli document.pdf -t structured
+docsummarizer-cli document.pdf -t brief
+docsummarizer-cli document.pdf -t detailed
 
 # Save output to file
-python src/cli.py document.pdf -o summary.txt
+docsummarizer-cli document.pdf -o summary.txt
 
 # Batch process a folder
-python src/cli.py ./papers/ -o ./summaries/
+docsummarizer-cli ./papers/ -o ./summaries/
 
 # Download model only (no processing)
-python src/cli.py --download-only
+docsummarizer-cli --download-only
 ```
 
 ### Summary Types
@@ -111,21 +111,24 @@ python src/cli.py --download-only
 
 ```
 DocSummarizer/
-├── run.py                  # Main entry point (GUI)
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-├── DEVELOPMENT.md          # Developer documentation
-├── DocSummarizer.spec      # PyInstaller build configuration
-├── setup_and_run.bat       # Windows launcher
-├── setup_and_run.sh        # Linux/macOS launcher
-├── .gitignore              # Git ignore rules
-└── src/
-    ├── __init__.py
-    ├── gui.py              # GUI application (CustomTkinter)
-    ├── cli.py              # Command-line interface
-    ├── document_parser.py  # Document text extraction
-    ├── model_manager.py    # LLM download and inference
-    └── logger.py           # Logging and diagnostics
+├── run.py                       # GUI entry point
+├── pyproject.toml               # Package metadata, deps, lint/test config
+├── README.md                    # This file
+├── DEVELOPMENT.md               # Developer documentation
+├── DocSummarizer.spec           # PyInstaller build configuration
+├── setup_and_run.bat            # Windows launcher
+├── setup_and_run.sh             # Linux/macOS launcher
+├── .github/                     # CI workflow + Dependabot config
+├── src/
+│   └── docsummarizer/           # Installable package
+│       ├── __init__.py
+│       ├── gui.py               # GUI application (CustomTkinter)
+│       ├── cli.py               # Command-line interface
+│       ├── document_parser.py   # Document text extraction
+│       ├── model_manager.py     # LLM download and inference
+│       ├── io_helpers.py        # Shared summary-writing helpers
+│       └── logger.py            # Logging and diagnostics
+└── tests/                       # pytest suite
 ```
 
 ## How It Works
@@ -185,6 +188,7 @@ The model is downloaded on first launch and stored in:
 ### Checking logs for errors
 Log files are stored at:
 - **Windows**: `%LOCALAPPDATA%\DocSummarizer\logs\`
+- **macOS**: `~/Library/Application Support/DocSummarizer/logs/`
 - **Linux**: `~/.local/share/DocSummarizer/logs/`
 
 Logs contain startup info, performance metrics, and error details (no document content is logged).

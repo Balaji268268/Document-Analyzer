@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from .document_parser import extract_text, get_document_info
+from .io_helpers import write_summary_txt
 from .model_manager import (
     DEFAULT_MODEL,
     Summarizer,
@@ -38,7 +39,7 @@ def ensure_model() -> bool:
     )
     print("This is a one-time download.\n")
 
-    path, error = download_model(progress_callback=print_progress)
+    _path, error = download_model(progress_callback=print_progress)
 
     if error:
         print(f"\nError: {error}")
@@ -49,7 +50,10 @@ def ensure_model() -> bool:
 
 
 def summarize_file(
-    filepath: str, summarizer: Summarizer, summary_type: str = "detailed", output_path: str = None
+    filepath: str,
+    summarizer: Summarizer,
+    summary_type: str = "detailed",
+    output_path: str | None = None,
 ) -> bool:
     """Summarize a single file."""
     info = get_document_info(filepath)

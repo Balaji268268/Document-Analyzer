@@ -38,12 +38,16 @@ python -m venv venv
 source venv/bin/activate  # Linux/macOS
 # or: venv\Scripts\activate  # Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the package (and dev tools) in editable mode
+pip install -e ".[dev]"
 
-# Run tests
-python -c "from src.document_parser import extract_text; print('Parser OK')"
-python -c "from src.model_manager import is_model_downloaded; print('Model manager OK')"
+# Quick smoke tests
+python -c "from docsummarizer.document_parser import extract_text; print('Parser OK')"
+python -c "from docsummarizer.model_manager import is_model_downloaded; print('Model manager OK')"
+
+# Full test suite
+pytest
+ruff check .
 ```
 
 ## Module Documentation
@@ -61,10 +65,10 @@ Handles text extraction from various document formats.
 - `get_document_info(file_path) -> dict` - File metadata
 
 **Supported formats:**
-- `.pdf` - PDF documents
-- `.docx`, `.doc` - Microsoft Word
+- `.pdf` - PDF documents (via pypdf)
+- `.docx` - Microsoft Word (modern XML format only; legacy `.doc` OLE files are not supported)
 - `.rtf` - Rich Text Format
-- `.txt`, `.md` - Plain text
+- `.txt`, `.md` - Plain text (with chardet-based encoding detection)
 
 ### model_manager.py
 
@@ -104,7 +108,7 @@ Command-line interface for terminal usage.
 
 **Usage:**
 ```bash
-python src/cli.py <input> [-t TYPE] [-o OUTPUT] [--download-only]
+docsummarizer-cli <input> [-t TYPE] [-o OUTPUT] [--download-only]
 ```
 
 ## GPU Acceleration (Optional)
@@ -251,20 +255,20 @@ summarizer = Summarizer(model_path, n_threads=4)
 ```bash
 # Test document parser
 python -c "
-from src.document_parser import extract_text
+from docsummarizer.document_parser import extract_text
 text, err = extract_text('test.pdf')
 print(f'Extracted {len(text)} chars, error: {err}')
 "
 
 # Test model loading
 python -c "
-from src.model_manager import Summarizer, get_model_path
+from docsummarizer.model_manager import Summarizer, get_model_path
 s = Summarizer(get_model_path())
 print('Model loaded successfully')
 "
 
 # Test summarization
-python src/cli.py test.pdf -t brief
+docsummarizer-cli test.pdf -t brief
 ```
 
 ## Contributing
