@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docsummarizer"
+version = "1.0.1"
+description = "Offline document summarization powered by a local LLM"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Wintersta7e" }]
+keywords = ["llm", "summarization", "offline", "pdf", "docx", "mistral", "llama-cpp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    # Core LLM. GHSA-56xg-wfcc-g829 fixed in 0.2.72; 0.3.x deferred.
+    "llama-cpp-python>=0.2.72,<0.3",
+    # Document parsing. pypdf <6.10.2 carries ~24 DoS advisories.
+    "pypdf>=6.10.2,<7",
+    "python-docx>=1.2.0,<2",
+    "striprtf>=0.0.32",
+    "chardet>=5.2.0,<6",
+    # GUI
+    "customtkinter>=5.2.2,<6",
+    # Utilities. hf-hub 1.x deferred; tqdm pre-4.66.3 has CVE-2024-34062.
+    "huggingface-hub>=0.30.0,<1",
+    "tqdm>=4.66.3,<5",
+    "psutil>=6.0.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+docsummarizer-cli = "docsummarizer.cli:main"
+
+[project.gui-scripts]
+docsummarizer = "docsummarizer.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/Wintersta7e/Doc-Summarizer"
+Issues = "https://github.com/Wintersta7e/Doc-Summarizer/issues"
+Releases = "https://github.com/Wintersta7e/Doc-Summarizer/releases"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docsummarizer"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/docsummarizer",
+    "run.py",
+    "README.md",
+    "LICENSE",
+    "DEVELOPMENT.md",
+    "DocSummarizer.spec",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["-ra", "--strict-markers"]

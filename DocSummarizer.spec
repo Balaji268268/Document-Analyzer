@@ -4,71 +4,70 @@ PyInstaller spec file for DocSummarizer.
 Build with: pyinstaller DocSummarizer.spec
 """
 
-import sys
-import os
+import importlib.util
 from pathlib import Path
 
-block_cipher = None
 
-# Get the directory containing this spec file
+def _llama_cpp_lib_dir() -> Path | None:
+    """Locate the llama_cpp/lib directory of the active interpreter.
+
+    Works across Windows, macOS, and Linux without hardcoded venv paths.
+    Returns None if llama_cpp isn't importable from this interpreter.
+    """
+    spec = importlib.util.find_spec("llama_cpp")
+    if spec is None or spec.origin is None:
+        return None
+    lib = Path(spec.origin).parent / "lib"
+    return lib if lib.exists() else None
+
+
 spec_dir = Path(SPECPATH)
 
-# Find llama_cpp lib directory (contains DLLs/shared libraries)
-if sys.platform == 'win32':
-    venv_site_packages = spec_dir / 'venv' / 'Lib' / 'site-packages'
-else:
-    # Linux: find the python version dynamically
-    venv_lib = spec_dir / 'venv_linux' / 'lib'
-    if venv_lib.exists():
-        py_dirs = [d for d in venv_lib.iterdir() if d.name.startswith('python')]
-        venv_site_packages = py_dirs[0] / 'site-packages' if py_dirs else None
-    else:
-        venv_site_packages = None
-
-llama_cpp_lib = venv_site_packages / 'llama_cpp' / 'lib' if venv_site_packages else None
-
-# Collect llama_cpp binaries
+# Collect llama_cpp shared libraries (.dll on Windows, .dylib on macOS, .so on Linux).
 llama_binaries = []
-if llama_cpp_lib and llama_cpp_lib.exists():
+llama_cpp_lib = _llama_cpp_lib_dir()
+if llama_cpp_lib is not None:
     for f in llama_cpp_lib.iterdir():
-        if f.suffix in ('.dll', '.so', '.dylib'):
-            llama_binaries.append((str(f), 'llama_cpp/lib'))
+        if f.suffix in (".dll", ".so", ".dylib"):
+            llama_binaries.append((str(f), "llama_cpp/lib"))
+
 
 a = Analysis(
-    [str(spec_dir / 'run.py'),
-     str(spec_dir / 'src' / 'logger.py'),
-     str(spec_dir / 'src' / 'gui.py'),
-     str(spec_dir / 'src' / 'model_manager.py'),
-     str(spec_dir / 'src' / 'document_parser.py')],
-    pathex=[str(spec_dir / 'src')],
+    [str(spec_dir / "run.py")],
+    pathex=[str(spec_dir / "src")],
     binaries=llama_binaries,
     datas=[],
     hiddenimports=[
-        'llama_cpp',
-        'pypdf',
-        'docx',
-        'striprtf',
-        'chardet',
-        'customtkinter',
-        'huggingface_hub',
-        'tqdm',
-        'tiktoken',
-        'tiktoken_ext',
-        'tiktoken_ext.openai_public',
-        'logger',
-        'psutil',
+        # Package modules — PyInstaller's static analysis sometimes misses
+        # these because the GUI imports them via relative paths inside __init__.
+        "docsummarizer",
+        "docsummarizer.gui",
+        "docsummarizer.cli",
+        "docsummarizer.document_parser",
+        "docsummarizer.logger",
+        "docsummarizer.model_manager",
+        # Third-party
+        "llama_cpp",
+        "pypdf",
+        "docx",
+        "striprtf",
+        "chardet",
+        "customtkinter",
+        "huggingface_hub",
+        "tqdm",
+        "tiktoken",
+        "tiktoken_ext",
+        "tiktoken_ext.openai_public",
+        "psutil",
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,
@@ -77,18 +76,18 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='DocSummarizer',
+    name="DocSummarizer",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # Set to True for debugging
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon path here if desired
+    icon=None,
 )

@@ -7,11 +7,14 @@ For users who prefer terminal over GUI.
 import argparse
 import sys
 from pathlib import Path
-from typing import List
 
-from document_parser import extract_text, get_document_info
-from model_manager import (
-    Summarizer, download_model, is_model_downloaded, get_model_path, DEFAULT_MODEL
+from .document_parser import extract_text, get_document_info
+from .model_manager import (
+    DEFAULT_MODEL,
+    Summarizer,
+    download_model,
+    get_model_path,
+    is_model_downloaded,
 )
 
 
@@ -19,8 +22,8 @@ def print_progress(percent: float, message: str):
     """Print progress to console."""
     bar_length = 40
     filled = int(bar_length * percent / 100)
-    bar = '=' * filled + '-' * (bar_length - filled)
-    print(f'\r[{bar}] {percent:.1f}% - {message}', end='', flush=True)
+    bar = "=" * filled + "-" * (bar_length - filled)
+    print(f"\r[{bar}] {percent:.1f}% - {message}", end="", flush=True)
     if percent >= 100:
         print()
 
@@ -30,7 +33,9 @@ def ensure_model() -> bool:
     if is_model_downloaded():
         return True
 
-    print(f"Model not found. Downloading {DEFAULT_MODEL['name']} ({DEFAULT_MODEL['size_gb']} GB)...")
+    print(
+        f"Model not found. Downloading {DEFAULT_MODEL['name']} ({DEFAULT_MODEL['size_gb']} GB)..."
+    )
     print("This is a one-time download.\n")
 
     path, error = download_model(progress_callback=print_progress)
@@ -44,10 +49,7 @@ def ensure_model() -> bool:
 
 
 def summarize_file(
-    filepath: str,
-    summarizer: Summarizer,
-    summary_type: str = "detailed",
-    output_path: str = None
+    filepath: str, summarizer: Summarizer, summary_type: str = "detailed", output_path: str = None
 ) -> bool:
     """Summarize a single file."""
     info = get_document_info(filepath)
@@ -66,7 +68,7 @@ def summarize_file(
     try:
         summary = summarizer.summarize(text, summary_type=summary_type)
     except Exception as e:
-        print(f"  Error: {str(e)}")
+        print(f"  Error: {e!s}")
         return False
 
     # Output
@@ -75,7 +77,7 @@ def summarize_file(
         if out_file.is_dir():
             out_file = out_file / f"{Path(filepath).stem}_summary.txt"
 
-        with open(out_file, 'w', encoding='utf-8') as f:
+        with open(out_file, "w", encoding="utf-8") as f:
             f.write(f"Summary of: {info['name']}\n")
             f.write(f"Type: {summary_type}\n")
             f.write("=" * 60 + "\n\n")
@@ -92,9 +94,9 @@ def summarize_file(
     return True
 
 
-def find_documents(path: Path) -> List[Path]:
+def find_documents(path: Path) -> list[Path]:
     """Find all supported documents in a directory."""
-    extensions = ('.pdf', '.docx', '.doc', '.rtf', '.txt', '.md')
+    extensions = (".pdf", ".docx", ".doc", ".rtf", ".txt", ".md")
 
     if path.is_file():
         return [path] if path.suffix.lower() in extensions else []
@@ -104,7 +106,7 @@ def find_documents(path: Path) -> List[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='DocSummarizer - Offline Document Summarization',
+        description="DocSummarizer - Offline Document Summarization",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -112,31 +114,29 @@ Examples:
   %(prog)s document.pdf -t structured       Use structured summary format
   %(prog)s ./documents/ -o ./summaries/     Batch process a folder
   %(prog)s report.docx -o summary.txt       Save to specific file
-        """
+        """,
     )
 
     parser.add_argument(
-        'input',
-        nargs='?',  # Optional when using --download-only
-        help='Input file or directory to process'
+        "input",
+        nargs="?",  # Optional when using --download-only
+        help="Input file or directory to process",
     )
 
     parser.add_argument(
-        '-t', '--type',
-        choices=['brief', 'detailed', 'structured'],
-        default='detailed',
-        help='Summary type (default: detailed)'
+        "-t",
+        "--type",
+        choices=["brief", "detailed", "structured"],
+        default="detailed",
+        help="Summary type (default: detailed)",
     )
 
     parser.add_argument(
-        '-o', '--output',
-        help='Output file or directory (default: print to console)'
+        "-o", "--output", help="Output file or directory (default: print to console)"
     )
 
     parser.add_argument(
-        '--download-only',
-        action='store_true',
-        help='Only download the model, do not process files'
+        "--download-only", action="store_true", help="Only download the model, do not process files"
     )
 
     args = parser.parse_args()

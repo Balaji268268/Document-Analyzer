@@ -6,17 +6,19 @@ Modern cross-platform GUI using CustomTkinter.
 import os
 import threading
 from pathlib import Path
-from typing import Optional
-import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
-from document_parser import extract_text, get_document_info, SUPPORTED_EXTENSIONS
-from model_manager import (
-    Summarizer, download_model, is_model_downloaded,
-    get_model_path, DEFAULT_MODEL, SMALL_MODEL
-)
-from logger import log_startup, log_info, log_error, log_debug, get_log_directory
+import customtkinter as ctk
 
+from .document_parser import extract_text, get_document_info
+from .logger import log_debug, log_error, log_info, log_startup
+from .model_manager import (
+    DEFAULT_MODEL,
+    Summarizer,
+    download_model,
+    get_model_path,
+    is_model_downloaded,
+)
 
 # Appearance settings
 ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
@@ -54,11 +56,7 @@ class LoadingDialog(ctk.CTkToplevel):
         self.frame.pack(fill="both", expand=True, padx=2, pady=2)
 
         # Message label
-        self.message_label = ctk.CTkLabel(
-            self.frame,
-            text=message,
-            font=ctk.CTkFont(size=14)
-        )
+        self.message_label = ctk.CTkLabel(self.frame, text=message, font=ctk.CTkFont(size=14))
         self.message_label.pack(pady=(20, 10))
 
         # Progress bar (indeterminate)
@@ -93,9 +91,9 @@ class DocSummarizerApp(ctk.CTk):
         self.geometry("900x700")
         self.minsize(700, 500)
 
-        self.summarizer: Optional[Summarizer] = None
-        self.current_file: Optional[str] = None
-        self.extracted_text: Optional[str] = None
+        self.summarizer: Summarizer | None = None
+        self.current_file: str | None = None
+        self.extracted_text: str | None = None
         self._is_closing = False
 
         # Handle window close properly
@@ -135,6 +133,7 @@ class DocSummarizerApp(ctk.CTk):
             pass
 
         import sys
+
         sys.exit(0)
 
     def _create_widgets(self):
@@ -149,16 +148,12 @@ class DocSummarizerApp(ctk.CTk):
         self.header_frame.grid_columnconfigure(1, weight=1)
 
         self.title_label = ctk.CTkLabel(
-            self.header_frame,
-            text="DocSummarizer",
-            font=ctk.CTkFont(size=24, weight="bold")
+            self.header_frame, text="DocSummarizer", font=ctk.CTkFont(size=24, weight="bold")
         )
         self.title_label.grid(row=0, column=0, padx=10, pady=5)
 
         self.status_label = ctk.CTkLabel(
-            self.header_frame,
-            text="Checking model status...",
-            font=ctk.CTkFont(size=12)
+            self.header_frame, text="Checking model status...", font=ctk.CTkFont(size=12)
         )
         self.status_label.grid(row=0, column=1, padx=10, pady=5, sticky="e")
 
@@ -168,25 +163,15 @@ class DocSummarizerApp(ctk.CTk):
         self.file_frame.grid_columnconfigure(1, weight=1)
 
         self.select_btn = ctk.CTkButton(
-            self.file_frame,
-            text="Select File",
-            command=self._select_file,
-            width=120
+            self.file_frame, text="Select File", command=self._select_file, width=120
         )
         self.select_btn.grid(row=0, column=0, padx=10, pady=10)
 
-        self.file_label = ctk.CTkLabel(
-            self.file_frame,
-            text="No file selected",
-            anchor="w"
-        )
+        self.file_label = ctk.CTkLabel(self.file_frame, text="No file selected", anchor="w")
         self.file_label.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
         self.select_folder_btn = ctk.CTkButton(
-            self.file_frame,
-            text="Batch (Folder)",
-            command=self._select_folder,
-            width=120
+            self.file_frame, text="Batch (Folder)", command=self._select_folder, width=120
         )
         self.select_folder_btn.grid(row=0, column=2, padx=10, pady=10)
 
@@ -233,7 +218,7 @@ class DocSummarizerApp(ctk.CTk):
             self.controls_frame,
             variable=self.summary_type_var,
             values=["brief", "detailed", "structured"],
-            width=120
+            width=120,
         )
         self.summary_type_menu.grid(row=0, column=1, padx=5, pady=10, sticky="w")
 
@@ -249,7 +234,7 @@ class DocSummarizerApp(ctk.CTk):
             text="Summarize",
             command=self._start_summarization,
             width=120,
-            state="disabled"
+            state="disabled",
         )
         self.summarize_btn.grid(row=0, column=3, padx=5, pady=10)
 
@@ -258,7 +243,7 @@ class DocSummarizerApp(ctk.CTk):
             text="Save Summary",
             command=self._save_summary,
             width=120,
-            state="disabled"
+            state="disabled",
         )
         self.save_btn.grid(row=0, column=4, padx=(5, 10), pady=10)
 
@@ -268,32 +253,23 @@ class DocSummarizerApp(ctk.CTk):
 
         # Model section
         model_label = ctk.CTkLabel(
-            self.tab_settings,
-            text="Model Settings",
-            font=ctk.CTkFont(size=16, weight="bold")
+            self.tab_settings, text="Model Settings", font=ctk.CTkFont(size=16, weight="bold")
         )
         model_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
         self.model_info_label = ctk.CTkLabel(
-            self.tab_settings,
-            text="Model: Checking...",
-            anchor="w"
+            self.tab_settings, text="Model: Checking...", anchor="w"
         )
         self.model_info_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
         self.download_btn = ctk.CTkButton(
-            self.tab_settings,
-            text="Download Model",
-            command=self._start_model_download,
-            width=150
+            self.tab_settings, text="Download Model", command=self._start_model_download, width=150
         )
         self.download_btn.grid(row=2, column=0, padx=10, pady=10, sticky="w")
 
         # Performance section
         performance_label = ctk.CTkLabel(
-            self.tab_settings,
-            text="Performance",
-            font=ctk.CTkFont(size=16, weight="bold")
+            self.tab_settings, text="Performance", font=ctk.CTkFont(size=16, weight="bold")
         )
         performance_label.grid(row=3, column=0, padx=10, pady=(20, 5), sticky="w")
 
@@ -315,14 +291,12 @@ class DocSummarizerApp(ctk.CTk):
             number_of_steps=cpu_count - 2,
             variable=self.threads_var,
             width=200,
-            command=self._on_threads_changed
+            command=self._on_threads_changed,
         )
         self.threads_slider.grid(row=0, column=1, padx=5)
 
         self.threads_value_label = ctk.CTkLabel(
-            threads_frame,
-            text=f"{default_threads} / {cpu_count}",
-            width=60
+            threads_frame, text=f"{default_threads} / {cpu_count}", width=60
         )
         self.threads_value_label.grid(row=0, column=2, padx=5)
 
@@ -330,7 +304,7 @@ class DocSummarizerApp(ctk.CTk):
             self.tab_settings,
             text="Lower = less CPU usage but slower. Requires model reload.",
             font=ctk.CTkFont(size=11),
-            text_color="gray"
+            text_color="gray",
         )
         threads_hint.grid(row=5, column=0, padx=10, pady=(0, 5), sticky="w")
 
@@ -339,15 +313,13 @@ class DocSummarizerApp(ctk.CTk):
             text="Reload Model",
             command=self._reload_model,
             width=150,
-            state="disabled"
+            state="disabled",
         )
         self.reload_model_btn.grid(row=6, column=0, padx=10, pady=5, sticky="w")
 
         # Appearance section
         appearance_label = ctk.CTkLabel(
-            self.tab_settings,
-            text="Appearance",
-            font=ctk.CTkFont(size=16, weight="bold")
+            self.tab_settings, text="Appearance", font=ctk.CTkFont(size=16, weight="bold")
         )
         appearance_label.grid(row=7, column=0, padx=10, pady=(20, 5), sticky="w")
 
@@ -357,26 +329,24 @@ class DocSummarizerApp(ctk.CTk):
             variable=self.appearance_var,
             values=["System", "Light", "Dark"],
             command=self._change_appearance,
-            width=150
+            width=150,
         )
         self.appearance_menu.grid(row=8, column=0, padx=10, pady=5, sticky="w")
 
         # About section
         about_label = ctk.CTkLabel(
-            self.tab_settings,
-            text="About",
-            font=ctk.CTkFont(size=16, weight="bold")
+            self.tab_settings, text="About", font=ctk.CTkFont(size=16, weight="bold")
         )
         about_label.grid(row=9, column=0, padx=10, pady=(20, 5), sticky="w")
 
         about_text = ctk.CTkLabel(
             self.tab_settings,
             text="DocSummarizer - Offline Document Summarization Tool\n"
-                 "Uses a local AI model to summarize documents.\n"
-                 "No internet required after initial model download.\n\n"
-                 "Supported formats: PDF, DOCX, DOC, RTF, TXT, MD",
+            "Uses a local AI model to summarize documents.\n"
+            "No internet required after initial model download.\n\n"
+            "Supported formats: PDF, DOCX, DOC, RTF, TXT, MD",
             anchor="w",
-            justify="left"
+            justify="left",
         )
         about_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
 
@@ -398,6 +368,7 @@ class DocSummarizerApp(ctk.CTk):
 
     def _load_model(self):
         """Load the model in a background thread."""
+
         def load():
             try:
                 n_threads = self.threads_var.get()
@@ -408,8 +379,8 @@ class DocSummarizerApp(ctk.CTk):
                 self._update_button_states()
                 self.reload_model_btn.configure(state="disabled")
             except Exception as e:
-                self.status_label.configure(text=f"Error loading model: {str(e)}", text_color="red")
-                log_error(f"Model loading failed: {str(e)}")
+                self.status_label.configure(text=f"Error loading model: {e!s}", text_color="red")
+                log_error(f"Model loading failed: {e!s}")
 
         thread = threading.Thread(target=load, daemon=True)
         thread.start()
@@ -445,7 +416,7 @@ class DocSummarizerApp(ctk.CTk):
                 # Update UI on main thread
                 self.after(0, lambda: self._on_reload_complete(loading, True))
             except Exception as e:
-                log_error(f"Model reload failed: {str(e)}")
+                log_error(f"Model reload failed: {e!s}")
                 self.after(0, lambda: self._on_reload_complete(loading, False, str(e)))
 
         thread = threading.Thread(target=reload, daemon=True)
@@ -463,6 +434,7 @@ class DocSummarizerApp(ctk.CTk):
 
     def _start_model_download(self):
         """Start downloading the model in a background thread."""
+
         def download():
             self.download_btn.configure(state="disabled", text="Downloading...")
             self.progress_bar.set(0)
@@ -492,10 +464,7 @@ class DocSummarizerApp(ctk.CTk):
             ("Text Files", "*.txt *.md *.rtf"),
         ]
 
-        filepath = filedialog.askopenfilename(
-            title="Select Document",
-            filetypes=filetypes
-        )
+        filepath = filedialog.askopenfilename(title="Select Document", filetypes=filetypes)
 
         if filepath:
             self._process_file(filepath)
@@ -506,17 +475,19 @@ class DocSummarizerApp(ctk.CTk):
 
         if folder:
             # Find all supported files
-            extensions = ('.pdf', '.docx', '.doc', '.rtf', '.txt', '.md')
-            files = [f for f in Path(folder).iterdir()
-                     if f.is_file() and f.suffix.lower() in extensions]
+            extensions = (".pdf", ".docx", ".doc", ".rtf", ".txt", ".md")
+            files = [
+                f for f in Path(folder).iterdir() if f.is_file() and f.suffix.lower() in extensions
+            ]
 
             if not files:
-                messagebox.showinfo("No Files", "No supported documents found in the selected folder.")
+                messagebox.showinfo(
+                    "No Files", "No supported documents found in the selected folder."
+                )
                 return
 
             result = messagebox.askyesno(
-                "Batch Processing",
-                f"Found {len(files)} document(s). Process all?"
+                "Batch Processing", f"Found {len(files)} document(s). Process all?"
             )
 
             if result:
@@ -549,10 +520,7 @@ class DocSummarizerApp(ctk.CTk):
 
     def _update_button_states(self):
         """Update button states based on current state."""
-        can_summarize = (
-            self.summarizer is not None and
-            self.extracted_text is not None
-        )
+        can_summarize = self.summarizer is not None and self.extracted_text is not None
         self.summarize_btn.configure(state="normal" if can_summarize else "disabled")
 
     def _start_summarization(self):
@@ -567,8 +535,7 @@ class DocSummarizerApp(ctk.CTk):
 
             try:
                 summary = self.summarizer.summarize(
-                    self.extracted_text,
-                    summary_type=self.summary_type_var.get()
+                    self.extracted_text, summary_type=self.summary_type_var.get()
                 )
 
                 self.progress_bar.set(1.0)
@@ -584,7 +551,7 @@ class DocSummarizerApp(ctk.CTk):
                 self.tabview.set("Summary")
 
             except Exception as e:
-                self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
+                self.status_label.configure(text=f"Error: {e!s}", text_color="red")
 
             finally:
                 self.summarize_btn.configure(state="normal", text="Summarize")
@@ -604,7 +571,7 @@ class DocSummarizerApp(ctk.CTk):
             total = len(files)
 
             for i, filepath in enumerate(files):
-                self.status_label.configure(text=f"Processing {i+1}/{total}: {filepath.name}")
+                self.status_label.configure(text=f"Processing {i + 1}/{total}: {filepath.name}")
                 self.progress_bar.set((i + 0.5) / total)
 
                 # Extract text
@@ -615,13 +582,12 @@ class DocSummarizerApp(ctk.CTk):
                 # Generate summary
                 try:
                     summary = self.summarizer.summarize(
-                        text,
-                        summary_type=self.summary_type_var.get()
+                        text, summary_type=self.summary_type_var.get()
                     )
 
                     # Save summary
                     output_path = Path(output_folder) / f"{filepath.stem}_summary.txt"
-                    with open(output_path, 'w', encoding='utf-8') as f:
+                    with open(output_path, "w", encoding="utf-8") as f:
                         f.write(f"Summary of: {filepath.name}\n")
                         f.write("=" * 50 + "\n\n")
                         f.write(summary)
@@ -631,9 +597,13 @@ class DocSummarizerApp(ctk.CTk):
 
                 self.progress_bar.set((i + 1) / total)
 
-            self.status_label.configure(text=f"Batch complete: {total} files processed", text_color="green")
+            self.status_label.configure(
+                text=f"Batch complete: {total} files processed", text_color="green"
+            )
             self.summarize_btn.configure(state="normal")
-            messagebox.showinfo("Complete", f"Processed {total} files.\nSummaries saved to: {output_folder}")
+            messagebox.showinfo(
+                "Complete", f"Processed {total} files.\nSummaries saved to: {output_folder}"
+            )
 
         thread = threading.Thread(target=process_batch, daemon=True)
         thread.start()
@@ -653,7 +623,7 @@ class DocSummarizerApp(ctk.CTk):
                 ("Text File", "*.txt"),
                 ("Markdown", "*.md"),
                 ("Word Document", "*.docx"),
-            ]
+            ],
         )
 
         if filepath:
@@ -661,14 +631,15 @@ class DocSummarizerApp(ctk.CTk):
             content = self.summary_text.get("1.0", "end-1c")
             self.summary_text.configure(state="disabled")
 
-            if filepath.endswith('.docx'):
+            if filepath.endswith(".docx"):
                 from docx import Document
+
                 doc = Document()
                 doc.add_heading(f"Summary: {Path(self.current_file).name}", 0)
                 doc.add_paragraph(content)
                 doc.save(filepath)
             else:
-                with open(filepath, 'w', encoding='utf-8') as f:
+                with open(filepath, "w", encoding="utf-8") as f:
                     f.write(content)
 
             self.status_label.configure(text=f"Saved: {Path(filepath).name}", text_color="green")

@@ -4,31 +4,36 @@ DocSummarizer - Offline Document Summarization Tool
 Main entry point.
 """
 
-import sys
 import os
+import sys
 
 
-class NullWriter:
-    """Null writer to prevent errors when stdout/stderr is None (Windows GUI mode)."""
-    def write(self, text):
+class _NullWriter:
+    """Discard writes when stdout/stderr is unavailable (Windows GUI mode)."""
+
+    def write(self, _text):
         pass
 
     def flush(self):
         pass
 
 
-# Fix for Windows GUI mode where stdout/stderr can be None
-# This prevents "'NoneType' object has no attribute 'write'" errors
-# from libraries like huggingface_hub that write to stdout
+# Windows GUI processes can have sys.stdout / sys.stderr set to None. Libraries
+# like huggingface_hub write to stdout during downloads and would crash with
+# "'NoneType' object has no attribute 'write'".
 if sys.stdout is None:
-    sys.stdout = NullWriter()
+    sys.stdout = _NullWriter()
 if sys.stderr is None:
-    sys.stderr = NullWriter()
+    sys.stderr = _NullWriter()
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from gui import main
+try:
+    from docsummarizer.gui import main
+except ImportError:
+    # Running from source without `pip install -e .`. Make src/ importable.
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+    from docsummarizer.gui import main
+
 
 if __name__ == "__main__":
     main()
