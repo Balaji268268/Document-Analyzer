@@ -68,7 +68,7 @@ if ! pip show llama-cpp-python &>/dev/null; then
 	# Note: no --quiet. The llama-cpp-python compile is the slow step; if it
 	# fails, we want the user to see the actual error rather than a generic
 	# "Failed to install dependencies" message.
-	if ! pip install -e .; then
+	if ! pip install -e ".[runtime]"; then
 		echo ""
 		echo " [ERROR] Failed to install dependencies. See output above."
 		exit 1

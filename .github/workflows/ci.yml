@@ -33,13 +33,14 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      # llama-cpp-python compiles from source by default and is slow / fragile
-      # on CI runners. Force wheel-only install so we fail fast if no wheel
-      # exists for this (python, OS) combo rather than burning 10+ minutes on
-      # a build that will probably fail anyway.
+      # llama-cpp-python is gated behind the `runtime` extra (see
+      # pyproject.toml) and intentionally NOT installed in CI: the package
+      # has no wheels for many matrix combos and source builds are slow
+      # and fragile. Tests don't import it (Llama is loaded lazily inside
+      # Summarizer.__init__), so the dev install is enough for ruff +
+      # pytest.
       - name: Install package + dev extras
-        # Quoted because `:all:` would otherwise be parsed as a YAML mapping.
-        run: 'pip install --only-binary=:all: -e ".[dev]"'
+        run: pip install -e ".[dev]"
 
       - name: Lint (ruff)
         run: ruff check .

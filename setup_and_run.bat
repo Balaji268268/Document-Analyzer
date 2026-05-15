@@ -73,7 +73,7 @@ if errorlevel 1 (
     REM Note: no --quiet. The llama-cpp-python compile is the slow step; if it
     REM fails, we want the user to see the actual error rather than a generic
     REM "Failed to install dependencies" message.
-    pip install -e .
+    pip install -e ".[runtime]"
     if errorlevel 1 (
         echo.
         echo  [ERROR] Failed to install dependencies. See output above.

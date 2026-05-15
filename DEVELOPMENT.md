@@ -38,7 +38,10 @@ python -m venv venv
 source venv/bin/activate  # Linux/macOS
 # or: venv\Scripts\activate  # Windows
 
-# Install the package (and dev tools) in editable mode
+# Install the package (and dev tools) in editable mode.
+# Use `.[dev,runtime]` if you also want the heavy llama-cpp-python
+# backend installed locally for end-to-end work; `.[dev]` alone is
+# enough for running ruff and pytest.
 pip install -e ".[dev]"
 
 # Quick smoke tests

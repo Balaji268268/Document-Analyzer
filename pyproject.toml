@@ -24,9 +24,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-    # Core LLM. Constructor surface we use (model_path, n_ctx, n_threads,
-    # n_threads_batch, verbose) is stable across 0.3.x.
-    "llama-cpp-python>=0.3.0,<0.4",
     # Document parsing. pypdf <6.10.2 carries ~24 DoS advisories.
     "pypdf>=6.11.0,<7",
     "python-docx>=1.2.0,<2",
@@ -41,6 +38,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# `runtime` carries the heavy native LLM backend. Split out from the
+# default deps because llama-cpp-python ships wheels only for a narrow
+# matrix; CI installs the package without it (tests stub the Llama
+# import). End users install `docsummarizer[runtime]` via the setup
+# scripts.
+runtime = [
+    "llama-cpp-python>=0.3.0,<0.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
