@@ -1,5 +1,11 @@
 # DocSummarizer
 
+[![CI](https://github.com/Wintersta7e/Doc-Summarizer/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Wintersta7e/Doc-Summarizer/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![License](https://img.shields.io/github/license/Wintersta7e/Doc-Summarizer)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/Wintersta7e/Doc-Summarizer?label=release&sort=semver)](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#system-requirements)
+
 A fully offline document summarization tool powered by a local AI model. Designed for scientists and researchers who need to quickly summarize academic papers and documents without sending data to external services.
 
 ## Features
