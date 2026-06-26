@@ -9,9 +9,20 @@ below; dialog filters (`SUPPORTED_EXTENSIONS`), the extractor dispatch
 in `extract_text`, and CLI directory scans all derive from it.
 """
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 import chardet
+
+
+class DocumentInfo(TypedDict):
+    """Basic metadata about a document file."""
+
+    name: str
+    extension: str
+    size_bytes: int
+    size_mb: float
 
 
 def extract_from_pdf(file_path: str) -> str:
@@ -34,11 +45,7 @@ def extract_from_docx(file_path: str) -> str:
     from docx import Document
 
     doc = Document(file_path)
-    text_parts = []
-
-    for paragraph in doc.paragraphs:
-        if paragraph.text.strip():
-            text_parts.append(paragraph.text)
+    text_parts = [p.text for p in doc.paragraphs if p.text.strip()]
 
     for table in doc.tables:
         for row in table.rows:
@@ -53,16 +60,15 @@ def extract_from_rtf(file_path: str) -> str:
     """Extract text from an RTF file."""
     from striprtf.striprtf import rtf_to_text
 
-    with open(file_path, encoding="utf-8", errors="ignore") as f:
+    with Path(file_path).open(encoding="utf-8", errors="ignore") as f:
         rtf_content = f.read()
 
-    return rtf_to_text(rtf_content)
+    return str(rtf_to_text(rtf_content))
 
 
 def extract_from_txt(file_path: str) -> str:
     """Extract text from a plain text file with encoding detection."""
-    with open(file_path, "rb") as f:
-        raw_data = f.read()
+    raw_data = Path(file_path).read_bytes()
 
     detected = chardet.detect(raw_data)
     encoding = detected.get("encoding", "utf-8") or "utf-8"
@@ -70,7 +76,7 @@ def extract_from_txt(file_path: str) -> str:
     return raw_data.decode(encoding, errors="replace")
 
 
-_EXTRACTORS = {
+_EXTRACTORS: dict[str, Callable[[str], str]] = {
     ".pdf": extract_from_pdf,
     ".docx": extract_from_docx,
     ".rtf": extract_from_rtf,
@@ -103,14 +109,15 @@ def extract_text(file_path: str) -> tuple[str, str | None]:
 
     try:
         text = extractor(file_path)
-        if not text.strip():
-            return "", "No text could be extracted from the document"
-        return text, None
     except Exception as e:
         return "", f"Error extracting text: {e!s}"
 
+    if not text.strip():
+        return "", "No text could be extracted from the document"
+    return text, None
 
-def get_document_info(file_path: str) -> dict:
+
+def get_document_info(file_path: str) -> DocumentInfo:
     """Get basic information about a document."""
     path = Path(file_path)
 

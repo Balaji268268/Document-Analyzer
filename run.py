@@ -4,17 +4,17 @@ DocSummarizer - Offline Document Summarization Tool
 Main entry point.
 """
 
-import os
 import sys
+from pathlib import Path
 
 
 class _NullWriter:
     """Discard writes when stdout/stderr is unavailable (Windows GUI mode)."""
 
-    def write(self, _text):
-        pass
+    def write(self, _text: str) -> int:
+        return len(_text)
 
-    def flush(self):
+    def flush(self) -> None:
         pass
 
 
@@ -31,7 +31,7 @@ try:
     from docsummarizer.gui import main
 except ImportError:
     # Running from source without `pip install -e .`. Make src/ importable.
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+    sys.path.insert(0, str(Path(__file__).parent / "src"))
     from docsummarizer.gui import main
 
 

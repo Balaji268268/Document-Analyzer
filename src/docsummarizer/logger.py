@@ -10,6 +10,8 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
+from typing import Literal, cast
 
 from .paths import app_data_dir
 
@@ -51,7 +53,8 @@ _logger_lock = threading.Lock()
 
 def get_logger() -> logging.Logger:
     """Get the global logger instance."""
-    global _logger
+    # Module-level singleton, guarded by _logger_lock.
+    global _logger  # noqa: PLW0603
     if _logger is None:
         with _logger_lock:
             if _logger is None:
@@ -59,29 +62,29 @@ def get_logger() -> logging.Logger:
     return _logger
 
 
-def log_info(message: str):
+def log_info(message: str) -> None:
     """Log an info message."""
     get_logger().info(message)
 
 
-def log_debug(message: str):
+def log_debug(message: str) -> None:
     """Log a debug message."""
     get_logger().debug(message)
 
 
-def log_warning(message: str):
+def log_warning(message: str) -> None:
     """Log a warning message."""
     get_logger().warning(message)
 
 
-def log_error(message: str):
+def log_error(message: str) -> None:
     """Log an error message."""
     get_logger().error(message)
 
 
-def get_system_info() -> dict:
+def get_system_info() -> dict[str, object]:
     """Gather system diagnostic information."""
-    info = {
+    info: dict[str, object] = {
         "platform": platform.system(),
         "platform_version": platform.version(),
         "platform_release": platform.release(),
@@ -104,7 +107,7 @@ def get_system_info() -> dict:
     return info
 
 
-def log_system_info():
+def log_system_info() -> None:
     """Log system diagnostic information."""
     logger = get_logger()
     info = get_system_info()
@@ -115,19 +118,17 @@ def log_system_info():
     logger.info(f"Platform: {info['platform']} {info['platform_release']}")
     logger.info(f"Architecture: {info['architecture']}")
     logger.info(f"CPU Cores: {info['cpu_count']}")
-    logger.info(f"Python: {info['python_version'].split()[0]}")
+    logger.info(f"Python: {str(info['python_version']).split()[0]}")
 
     if "total_memory_gb" in info:
         logger.info(f"Total Memory: {info['total_memory_gb']} GB")
-        logger.info(
-            f"Available Memory: {info['available_memory_gb']} GB "
-            f"({100 - info['memory_percent_used']:.1f}% free)"
-        )
+        free_pct = 100 - cast("float", info["memory_percent_used"])
+        logger.info(f"Available Memory: {info['available_memory_gb']} GB ({free_pct:.1f}% free)")
 
     logger.info("=" * 60)
 
 
-def log_startup():
+def log_startup() -> None:
     """Log application startup."""
     logger = get_logger()
     logger.info("")
@@ -144,18 +145,7 @@ def get_memory_usage_mb() -> float:
         import psutil
 
         process = psutil.Process(os.getpid())
-        return round(process.memory_info().rss / (1024**2), 2)
-    except ImportError:
-        return 0.0
-
-
-def get_cpu_percent() -> float:
-    """Get current process CPU usage percent."""
-    try:
-        import psutil
-
-        process = psutil.Process(os.getpid())
-        return process.cpu_percent(interval=0.1)
+        return float(round(process.memory_info().rss / (1024**2), 2))
     except ImportError:
         return 0.0
 
@@ -163,18 +153,25 @@ def get_cpu_percent() -> float:
 class Timer:
     """Simple timer for measuring operation duration."""
 
-    def __init__(self, operation_name: str):
+    def __init__(self, operation_name: str) -> None:
         self.operation_name = operation_name
-        self.start_time = None
-        self.end_time = None
+        self.start_time: datetime | None = None
+        self.end_time: datetime | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "Timer":
         self.start_time = datetime.now()
         log_info(f"Starting: {self.operation_name}")
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         self.end_time = datetime.now()
+        if self.start_time is None:
+            return False
         duration = (self.end_time - self.start_time).total_seconds()
 
         if exc_type is not None:

@@ -27,7 +27,7 @@ def write_summary_txt(
 
         <summary body>
     """
-    with open(output_path, "w", encoding="utf-8") as f:
+    with Path(output_path).open("w", encoding="utf-8") as f:
         f.write(f"Summary of: {source_name}\n")
         if summary_type:
             f.write(f"Type: {summary_type}\n")
