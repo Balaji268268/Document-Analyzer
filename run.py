@@ -28,11 +28,11 @@ if sys.stderr is None:
 
 
 try:
-    from docsummarizer.gui import main
+    from docsummarizer.ui.app import main
 except ImportError:
     # Running from source without `pip install -e .`. Make src/ importable.
     sys.path.insert(0, str(Path(__file__).parent / "src"))
-    from docsummarizer.gui import main
+    from docsummarizer.ui.app import main
 
 
 if __name__ == "__main__":

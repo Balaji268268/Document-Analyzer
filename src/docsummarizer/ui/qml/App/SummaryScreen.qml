@@ -105,7 +105,10 @@ Item {
             spacing: 16
 
             Rectangle {
-                Layout.preferredWidth: parent.width * 0.45
+                // 45/55 split via preferred-width ratio (referencing parent.width
+                // here causes a recursive Layout rearrange).
+                Layout.preferredWidth: 45
+                Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 3
                 color: Theme.srcPane
@@ -145,6 +148,7 @@ Item {
             }
 
             Rectangle {
+                Layout.preferredWidth: 55
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 3

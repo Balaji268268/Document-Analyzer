@@ -29,10 +29,6 @@ dependencies = [
     "python-docx>=1.2,<2",
     "striprtf>=0.0.32",
     "chardet>=7.4,<8",
-    # GUI. Held on the 5.x line: 6.0.0 (released 2026-06-24) is a brand-new
-    # major and the GUI can't be validated in headless CI, so the upgrade is
-    # deferred until it can be verified on a desktop.
-    "customtkinter>=5.2.2,<6",
     # Utilities. tqdm <4.66.3 has CVE-2024-34062.
     "huggingface-hub>=1.21,<2",
     "tqdm>=4.68,<5",
@@ -65,7 +61,7 @@ gui = [
 docsummarizer-cli = "docsummarizer.cli:main"
 
 [project.gui-scripts]
-docsummarizer = "docsummarizer.gui:main"
+docsummarizer = "docsummarizer.ui.app:main"
 
 [project.urls]
 Homepage = "https://github.com/Wintersta7e/Doc-Summarizer"
@@ -164,7 +160,6 @@ files = ["src/docsummarizer", "run.py"]
 # as untyped rather than erroring on the missing stubs.
 module = [
     "pypdf.*",
-    "customtkinter.*",
     "llama_cpp.*",
     "huggingface_hub.*",
     "docx.*",
@@ -181,12 +176,6 @@ module = ["striprtf.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
-[[tool.mypy.overrides]]
-# The GUI subclasses customtkinter widgets, which are untyped (Any) under the
-# override above; subclassing Any is unavoidable there.
-module = "docsummarizer.gui"
-disallow_subclassing_any = false
-
 # --------------------------------------------------------------------------- #
 # pytest + coverage
 # --------------------------------------------------------------------------- #
@@ -198,9 +187,10 @@ addopts = ["-ra", "--strict-markers", "--strict-config"]
 [tool.coverage.run]
 source = ["docsummarizer"]
 branch = true
-# gui.py drives a Tk event loop and needs a display; it's validated manually,
-# not in unit tests, so it's excluded from the coverage gate.
-omit = ["*/gui.py"]
+# ui/app.py launches the Qt event loop and needs a display; it's validated
+# manually (its engine wiring is covered by the QML load test), so it's
+# excluded from the coverage gate.
+omit = ["*/ui/app.py"]
 
 [tool.coverage.report]
 show_missing = true

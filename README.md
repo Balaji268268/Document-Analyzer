@@ -133,7 +133,8 @@ DocSummarizer/
 ├── src/
 │   └── docsummarizer/           # Installable package
 │       ├── __init__.py
-│       ├── gui.py               # GUI application (CustomTkinter)
+│       ├── ui/                  # Qt/QML desktop UI (ConsoleBridge + qml/)
+│       ├── provenance.py        # Summary point → source sentence grounding
 │       ├── cli.py               # Command-line interface
 │       ├── document_parser.py   # Document text extraction
 │       ├── model_manager.py     # LLM download and inference
@@ -226,4 +227,4 @@ MIT License - See LICENSE file for details.
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) - Efficient LLM inference
 - [Qwen](https://github.com/QwenLM/Qwen3) - Base model (Qwen3 4B Instruct)
 - [Unsloth](https://huggingface.co/unsloth) - Quantized GGUF models
-- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - Modern GUI toolkit
+- [PySide6 / Qt](https://doc.qt.io/qtforpython/) - Native Qt/QML desktop UI
