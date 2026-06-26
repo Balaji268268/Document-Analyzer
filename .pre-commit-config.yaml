@@ -1,0 +1,17 @@
+# Local pre-commit hooks mirroring CI. Optional but recommended:
+#   pip install pre-commit && pre-commit install
+# CI remains the source of truth; these just catch issues before a commit.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        # mypy reads its file list + overrides from pyproject.toml.
+        pass_filenames: false

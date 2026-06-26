@@ -10,6 +10,14 @@ __pycache__/
 *$py.class
 *.so
 
+# Tooling caches & coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
 # Distribution / packaging
 build/
 dist/

@@ -38,7 +38,7 @@ jobs:
       # has no wheels for many matrix combos and source builds are slow
       # and fragile. Tests don't import it (Llama is loaded lazily inside
       # Summarizer.__init__), so the dev install is enough for ruff +
-      # pytest.
+      # mypy + pytest.
       - name: Install package + dev extras
         run: pip install -e ".[dev]"
 
@@ -48,5 +48,8 @@ jobs:
       - name: Format check (ruff)
         run: ruff format --check .
 
-      - name: Tests (pytest)
-        run: pytest -ra
+      - name: Type check (mypy --strict)
+        run: mypy
+
+      - name: Tests (pytest + coverage gate)
+        run: pytest -ra --cov=docsummarizer --cov-report=term-missing
