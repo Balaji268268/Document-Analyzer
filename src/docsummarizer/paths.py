@@ -23,11 +23,12 @@ def app_data_dir(subpath: str) -> Path:
       `~/.local/share/DocSummarizer/<subpath>`)
     """
     if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        # `or` (not get's default) so a set-but-empty var doesn't resolve to cwd.
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
 
     target = base / _APP_NAME / subpath
     target.mkdir(parents=True, exist_ok=True)

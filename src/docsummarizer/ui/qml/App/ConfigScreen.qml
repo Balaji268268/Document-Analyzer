@@ -193,6 +193,7 @@ Item {
                                 width: 52
                                 height: 26
                                 radius: 13
+                                opacity: bridge.gpuSupported ? 1.0 : 0.4
                                 color: bridge.gpuEnabled ? Theme.accent : Theme.srcPane
                                 border.width: 1
                                 border.color: bridge.gpuEnabled ? Theme.accentDeep : Theme.line2
@@ -211,14 +212,15 @@ Item {
                                 }
                                 MouseArea {
                                     anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: bridge.gpuSupported
+                                    cursorShape: bridge.gpuSupported ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: bridge.toggleGpu(!bridge.gpuEnabled)
                                 }
                             }
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: bridge.gpuEnabled ? "Layers offloaded to GPU when supported by the build." : "Running on CPU. Enable to offload layers to the GPU."
+                            text: !bridge.gpuSupported ? "GPU not available in this build (CPU-only). Inference runs on the CPU." : (bridge.gpuEnabled ? "Layers offloaded to the GPU on reload." : "Running on CPU. Enable to offload layers to the GPU.")
                             color: Theme.faint
                             font.family: Theme.body
                             font.pixelSize: 12
@@ -278,7 +280,10 @@ Item {
                         SegmentedControl {
                             options: ["System", "Light", "Dark"]
                             current: bridge.appearance
-                            onSelected: value => bridge.setAppearance(value)
+                            onSelected: value => {
+                                bridge.setAppearance(value);
+                                Theme.applyMode(value);
+                            }
                         }
                     }
                 }

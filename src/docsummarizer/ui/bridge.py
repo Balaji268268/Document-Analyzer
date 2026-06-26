@@ -13,23 +13,27 @@ plain dict (a ``QVariant`` map) since QML cannot consume a frozen dataclass.
 from __future__ import annotations
 
 import os
+import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QMutex, QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import Property, QMutex, QObject, QThreadPool, QUrl, Signal, Slot
 
 from docsummarizer import document_parser
 from docsummarizer.io_helpers import write_summary_docx, write_summary_txt
-from docsummarizer.logger import log_info
+from docsummarizer.logger import log_debug, log_error, log_info
 from docsummarizer.model_manager import (
     DEFAULT_MODEL,
     SUMMARY_TYPE_DETAILED,
     SUMMARY_TYPES,
     StructuredSummary,
+    SummarizationCancelledError,
     Summarizer,
     download_model,
     get_model_path,
+    gpu_offload_supported,
     is_model_downloaded,
 )
 from docsummarizer.settings import Settings, load_settings, save_settings
@@ -48,6 +52,23 @@ def _quant_label(filename: str) -> str:
         if part.upper().startswith("Q") and any(ch.isdigit() for ch in part):
             return part
     return ""
+
+
+_DRIVE_LETTER_RE = re.compile(r"^/([A-Za-z]:)")
+
+
+def _url_to_path(url: str) -> str:
+    """Convert a QML ``file://`` URL — or an already-local path — to a usable
+    local filesystem path, cross-platform.
+
+    A QML ``FileDialog`` returns ``file:///C:/x`` on Windows and
+    ``file:///home/x`` on POSIX. Qt only strips the leading slash before a
+    Windows drive letter on Windows builds, so normalise that ourselves —
+    otherwise ``/C:/x`` reaches the parser and the open silently fails.
+    """
+    if url.startswith("file:"):
+        return _DRIVE_LETTER_RE.sub(r"\1", QUrl(url).toLocalFile())
+    return url
 
 
 def _point_to_variant(point: Any) -> dict[str, Any]:
@@ -136,19 +157,52 @@ class ConsoleBridge(QObject):
         self._download_pct = 0.0
         self._downloading = False
         self._batch_rows: list[dict[str, Any]] = []
+        self._last_summary: StructuredSummary | None = None
+        self._cancel_requested = False
+        # Hold running workers: QThreadPool.start() does not keep a Python
+        # reference, so without this the Worker (and its signals) is GC'd before
+        # run() finishes and the done/failed signal is silently lost.
+        self._active_workers: set[Worker] = set()
+        # canSummarize depends on model-ready as well as the document, but a
+        # Qt Property has a single NOTIFY; re-fire docChanged on model changes so
+        # the Summarize/Save buttons re-evaluate when the model finishes loading.
+        self.modelReadyChanged.connect(self.docChanged)
 
     # -- threading seam ----------------------------------------------------- #
     def _run(self, work: Callable[[], Any], on_done: Callable[[Any], None]) -> None:
-        """Run ``work`` off-thread (or inline in synchronous/test mode)."""
+        """Run ``work`` off-thread (or inline in synchronous/test mode).
+
+        Logs the operation's start, completion (with duration), and failure —
+        keyed off the current status text (never document content) — so a silent
+        hang shows up in the log as a "started" with no matching "done".
+        """
         if self._synchronous:
             on_done(work())
             return
+        op = self._status_text or "operation"
+        started = time.monotonic()
         worker = Worker(work)
-        worker.signals.done.connect(on_done)
-        worker.signals.failed.connect(self._on_worker_failed)
+        self._active_workers.add(worker)  # keep alive until run() finishes
+        log_debug(f"{op}: started")
+
+        def on_success(result: Any) -> None:
+            self._active_workers.discard(worker)
+            log_info(f"{op}: done in {time.monotonic() - started:.2f}s")
+            on_done(result)
+
+        def on_failure(message: str) -> None:
+            self._active_workers.discard(worker)
+            log_error(f"{op}: failed after {time.monotonic() - started:.2f}s — {message}")
+            self._on_worker_failed(message)
+
+        worker.signals.done.connect(on_success)
+        worker.signals.failed.connect(on_failure)
         self._pool.start(worker)
 
     def _on_worker_failed(self, message: str) -> None:
+        if self._downloading:
+            self._downloading = False
+            self.downloadChanged.emit()
         self._finish(f"Error: {message}", "error")
         self.summaryError.emit(message)
 
@@ -200,7 +254,8 @@ class ConsoleBridge(QObject):
 
     def _get_compute_label(self) -> str:
         threads = self._settings.n_threads or _auto_threads()
-        return f"{'GPU' if self._settings.use_gpu else 'CPU'} · {threads}T"
+        gpu = self._settings.use_gpu and gpu_offload_supported()
+        return f"{'GPU' if gpu else 'CPU'} · {threads}T"
 
     computeLabel = Property(str, _get_compute_label, notify=settingsChanged)
 
@@ -218,6 +273,11 @@ class ConsoleBridge(QObject):
         return self._settings.use_gpu
 
     gpuEnabled = Property(bool, _get_gpu, notify=settingsChanged)
+
+    def _get_gpu_supported(self) -> bool:
+        return gpu_offload_supported()
+
+    gpuSupported = Property(bool, _get_gpu_supported, constant=True)
 
     def _get_appearance(self) -> str:
         return self._settings.appearance
@@ -364,6 +424,7 @@ class ConsoleBridge(QObject):
             return
         self._downloading = True
         self._download_pct = 0.0
+        self._set_status("Downloading model…", "ok")
         self.downloadChanged.emit()
 
         def on_progress(pct: float, message: str) -> None:
@@ -389,28 +450,51 @@ class ConsoleBridge(QObject):
         self._run(work, done)
 
     # -- document + summary ------------------------------------------------- #
+    @Slot(str, result=str)
+    def urlToPath(self, url: str) -> str:
+        """Cross-platform file-URL → local-path conversion, callable from QML."""
+        return _url_to_path(url)
+
     @Slot(str)
     def loadDocument(self, file_path: str) -> None:
-        path = file_path.removeprefix("file://")
+        if self._busy:
+            return
+        path = _url_to_path(file_path)
         self._current_file = Path(path).name
+        self._extracted_text = ""
+        self._last_summary = None
+        self._set_busy(True)
         self._set_status("Extracting text…", "ok")
-        text, error = document_parser.extract_text(path)
-        if error:
-            self._extracted_text = ""
-            self._set_status(error, "error")
-        else:
-            self._extracted_text = text
-            self._set_status("Text extracted", "ok")
         self.docChanged.emit()
+
+        def work() -> tuple[str, str | None]:
+            return document_parser.extract_text(path)
+
+        def done(result: Any) -> None:
+            text, error = result
+            if error:
+                self._extracted_text = ""
+                self._finish(error, "error")
+            else:
+                self._extracted_text = text
+                self._finish("Text extracted")
+            self.docChanged.emit()
+
+        self._run(work, done)
 
     @Slot()
     def unloadDocument(self) -> None:
         self._current_file = ""
         self._extracted_text = ""
+        self._last_summary = None
         self.docChanged.emit()
 
     @Slot(str)
     def setSummaryType(self, summary_type: str) -> None:
+        # Ignore type changes mid-generation: summarize() would no-op on the busy
+        # guard, leaving the label and the shown summary out of sync.
+        if self._busy:
+            return
         if summary_type in SUMMARY_TYPES and summary_type != self._summary_type:
             self._summary_type = summary_type
             self.summaryTypeChanged.emit()
@@ -424,17 +508,34 @@ class ConsoleBridge(QObject):
             return
         text = self._extracted_text
         summary_type = self._summary_type
+        self._cancel_requested = False
         self._set_busy(True)
         self._set_status("Generating summary…", "ok")
 
-        def work() -> StructuredSummary:
-            return summarizer.summarize_structured(text, summary_type)
+        def work() -> StructuredSummary | None:
+            try:
+                return summarizer.summarize_structured(
+                    text, summary_type, should_cancel=lambda: self._cancel_requested
+                )
+            except SummarizationCancelledError:
+                return None
 
         def done(summary: Any) -> None:
+            if summary is None:  # cancelled cleanly between chunks
+                self._finish("Stopped", "warn")
+                return
+            self._last_summary = summary
             self._finish("Summary complete")
             self.summaryReady.emit(summary_to_variant(summary))
 
         self._run(work, done)
+
+    @Slot()
+    def cancelSummarize(self) -> None:
+        """Request a clean stop; the worker aborts at the next chunk boundary."""
+        if self._busy:
+            self._cancel_requested = True
+            self._set_status("Stopping…", "warn")
 
     @Slot()
     def regenerate(self) -> None:
@@ -442,16 +543,19 @@ class ConsoleBridge(QObject):
 
     @Slot(str, bool)
     def saveSummary(self, file_path: str, as_docx: bool) -> None:
-        path = file_path.removeprefix("file://")
-        summarizer = self._get_summarizer()
-        if summarizer is None or not self._extracted_text:
+        # Write the summary already on screen — never re-run inference (that both
+        # wasted compute and could save text different from what the user saw,
+        # and a second concurrent run is unsafe on the shared llama context).
+        summary = self._last_summary
+        if summary is None:
+            self.toast.emit("Generate a summary first")
             return
-        text = self._extracted_text
-        summary_type = self._summary_type
+        path = _url_to_path(file_path)
         source = self._current_file
+        summary_type = summary.summary_type
+        self._set_status("Saving summary…", "ok")
 
         def work() -> None:
-            summary = summarizer.summarize_structured(text, summary_type)
             if as_docx:
                 write_summary_docx(path, source_name=source, summary=summary.text)
             else:
@@ -488,6 +592,40 @@ class ConsoleBridge(QObject):
         self.savedFlash.emit()
 
     # -- batch -------------------------------------------------------------- #
+    def _resolve_batch_inputs(self, folder: Path, out: Path) -> list[Path] | None:
+        """Validate the batch folders and ensure the output dir exists.
+
+        Returns the documents to process, or ``None`` after toasting why not —
+        so a missing/empty folder is a friendly message, not an unhandled slot
+        exception that would silently abort the whole operation.
+        """
+        if not folder.is_dir():
+            self.toast.emit("That folder does not exist")
+            return None
+        files = document_parser.find_documents(folder)
+        if not files:
+            self.toast.emit("No supported documents in that folder")
+            return None
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self.toast.emit("Could not create the output folder")
+            return None
+        return files
+
+    @staticmethod
+    def _batch_output_path(out: Path, stem: str, used: set[str]) -> Path:
+        """A unique ``<stem>_summary.txt`` under ``out`` — disambiguating
+        same-stem inputs (e.g. report.pdf + report.docx) so they don't silently
+        overwrite each other."""
+        name = f"{stem}_summary.txt"
+        counter = 2
+        while name in used:
+            name = f"{stem}_{counter}_summary.txt"
+            counter += 1
+        used.add(name)
+        return out / name
+
     @Slot(str, str)
     def batchProcess(self, folder_path: str, out_dir: str) -> None:
         """Summarize every supported document in a folder, writing .txt outputs.
@@ -498,13 +636,12 @@ class ConsoleBridge(QObject):
         summarizer = self._get_summarizer()
         if summarizer is None or self._busy:
             return
-        folder = Path(folder_path.removeprefix("file://"))
-        out = Path(out_dir.removeprefix("file://"))
-        summary_type = self._summary_type
-        files = document_parser.find_documents(folder)
-        if not files:
-            self.toast.emit("No supported documents in that folder")
+        folder = Path(_url_to_path(folder_path))
+        out = Path(_url_to_path(out_dir))
+        files = self._resolve_batch_inputs(folder, out)
+        if files is None:
             return
+        summary_type = self._summary_type
         total = len(files)
         self._batch_rows = [{"name": f.name, "status": "QUEUED", "tokens": 0} for f in files]
         self.batchRowsChanged.emit()
@@ -518,6 +655,8 @@ class ConsoleBridge(QObject):
                 rows[index]["tokens"] = tokens
             self._batch_rows = rows
             self.batchRowsChanged.emit()
+
+        used_names: set[str] = set()
 
         def work() -> tuple[int, list[dict[str, str]]]:
             done_count = 0
@@ -533,7 +672,7 @@ class ConsoleBridge(QObject):
                 try:
                     summary = summarizer.summarize(text, summary_type)
                     write_summary_txt(
-                        out / f"{path.stem}_summary.txt",
+                        self._batch_output_path(out, path.stem, used_names),
                         source_name=path.name,
                         summary=summary,
                         summary_type=summary_type,

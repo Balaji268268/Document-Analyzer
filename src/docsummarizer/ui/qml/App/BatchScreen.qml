@@ -15,14 +15,11 @@ Item {
     property int totalCount: 0
     property real progress: 0
 
-    function pathOf(url) {
-        return url.toString().replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "");
-    }
-
     Connections {
         target: bridge
         function onBatchProgress(done, total, name) {
             screen.totalCount = total;
+            screen.doneCount = done;  // files completed before the in-flight one
             screen.progress = total > 0 ? done / total : 0;
         }
         function onBatchComplete(done, total, failures, outFolder) {
@@ -32,13 +29,14 @@ Item {
         }
     }
 
+    // Let the bridge convert URLs (cross-platform) rather than hand-rolling it.
     FolderDialog {
         id: folderDialog
-        onAccepted: screen.folder = screen.pathOf(selectedFolder)
+        onAccepted: screen.folder = bridge.urlToPath(selectedFolder.toString())
     }
     FolderDialog {
         id: outputDialog
-        onAccepted: screen.outDir = screen.pathOf(selectedFolder)
+        onAccepted: screen.outDir = bridge.urlToPath(selectedFolder.toString())
     }
 
     ColumnLayout {

@@ -9,6 +9,16 @@ QtObject {
     id: theme
     property bool dark: true
 
+    // Apply a persisted appearance mode ("System" | "Light" | "Dark").
+    function applyMode(mode) {
+        if (mode === "Light")
+            dark = false;
+        else if (mode === "Dark")
+            dark = true;
+        else
+            dark = (Qt.styleHints.colorScheme === Qt.Dark);  // System → follow OS
+    }
+
     // Surfaces
     readonly property color pageBg: dark ? "#080d14" : "#eef2f6"
     readonly property color pageTop: dark ? "#0d1721" : "#ffffff"

@@ -21,6 +21,9 @@ ApplicationWindow {
     property string activeScreen: "summary"
     property bool forceFirstRun: false
 
+    // Restore the persisted appearance on launch (was previously always dark).
+    Component.onCompleted: Theme.applyMode(bridge.appearance)
+
     // Radial page vignette (lighter at top-center, darkening to the edges).
     Shape {
         anchors.fill: parent
@@ -65,13 +68,14 @@ ApplicationWindow {
 
     // Faint 40px instrument grid.
     Canvas {
+        id: gridCanvas
         anchors.fill: parent
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
         Connections {
             target: Theme
             function onDarkChanged() {
-                parent.requestPaint();
+                gridCanvas.requestPaint();
             }
         }
         onPaint: {
@@ -113,41 +117,31 @@ ApplicationWindow {
                 onNavigate: name => win.activeScreen = name
             }
 
-            Loader {
+            // StackLayout (not a Loader) so each screen stays alive across
+            // navigation — switching tabs no longer discards the generated
+            // summary, search state, or scroll position.
+            StackLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                sourceComponent: {
+                currentIndex: {
                     switch (win.activeScreen) {
                     case "extract":
-                        return extractComponent;
+                        return 1;
                     case "batch":
-                        return batchComponent;
+                        return 2;
                     case "config":
-                        return configComponent;
+                        return 3;
                     default:
-                        return summaryComponent;
+                        return 0;
                     }
                 }
+                SummaryScreen {}
+                ExtractScreen {}
+                BatchScreen {}
+                ConfigScreen {
+                    onReinitialize: win.forceFirstRun = true
+                }
             }
-        }
-    }
-
-    Component {
-        id: summaryComponent
-        SummaryScreen {}
-    }
-    Component {
-        id: extractComponent
-        ExtractScreen {}
-    }
-    Component {
-        id: batchComponent
-        BatchScreen {}
-    }
-    Component {
-        id: configComponent
-        ConfigScreen {
-            onReinitialize: win.forceFirstRun = true
         }
     }
 

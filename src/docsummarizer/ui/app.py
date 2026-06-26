@@ -14,7 +14,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 
-from docsummarizer.logger import log_startup
+from docsummarizer.logger import log_error, log_startup
 from docsummarizer.ui.bridge import ConsoleBridge
 
 _QML_DIR = Path(__file__).parent / "qml"
@@ -41,6 +41,33 @@ def create_engine(app: QGuiApplication) -> tuple[QQmlApplicationEngine, ConsoleB
     return engine, bridge
 
 
+def _install_excepthook(bridge: ConsoleBridge) -> None:
+    """Route uncaught exceptions to the log + a best-effort toast.
+
+    A windowed (no-console) build discards stderr, so without this an uncaught
+    exception in a Qt slot vanishes silently. Logging it makes the next such
+    failure diagnosable from the log file.
+    """
+    import contextlib
+    import traceback
+    from types import TracebackType
+
+    def hook(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        log_error(
+            "Uncaught exception:\n"
+            + "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        )
+        with contextlib.suppress(Exception):  # best-effort during a crash
+            bridge.toast.emit("Something went wrong — see the log file")
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = hook
+
+
 def main() -> int:
     """Launch the DocSummarizer console UI."""
     log_startup()
@@ -50,6 +77,7 @@ def main() -> int:
     # Keep the engine referenced for the app's lifetime (GC would tear down the
     # window). bridge is owned by the engine's context but used here too.
     _engine, bridge = create_engine(app)
+    _install_excepthook(bridge)
     bridge.checkModel()
     return app.exec()
 

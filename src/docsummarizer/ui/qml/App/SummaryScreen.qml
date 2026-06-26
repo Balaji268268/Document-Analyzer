@@ -43,6 +43,13 @@ Item {
             screen.hlEnd = -1;
         }
         srcText.text = screen.renderSource();
+        // Scroll the highlighted sentence into view — on a long document it is
+        // usually off-screen, so without this the trace looks like it did nothing.
+        if (screen.hlStart >= 0) {
+            var r = srcText.positionToRectangle(screen.hlStart);
+            var maxY = Math.max(0, srcText.implicitHeight - srcFlick.height);
+            srcFlick.contentY = Math.max(0, Math.min(r.y - srcFlick.height / 3, maxY));
+        }
     }
     function resetProvenance() {
         screen.activePoint = -1;
@@ -322,11 +329,13 @@ Item {
                         text: "SOURCE · ABSTRACT"
                     }
                     Flickable {
+                        id: srcFlick
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         contentWidth: width
                         contentHeight: srcText.implicitHeight
+                        ScrollBar.vertical: ScrollBar {}
                         TextEdit {
                             id: srcText
                             width: parent.width
@@ -564,7 +573,13 @@ Item {
                 Layout.fillWidth: true
             }
             ConsoleButton {
+                text: "Stop"
+                visible: bridge.busy
+                onClicked: bridge.cancelSummarize()
+            }
+            ConsoleButton {
                 text: "Copy"
+                enabled: !bridge.busy
                 onClicked: {
                     copyHelper.text = screen.summary.text;
                     copyHelper.selectAll();
@@ -595,6 +610,7 @@ Item {
         id: saveDialog
         title: "Save summary"
         fileMode: FileDialog.SaveFile
+        defaultSuffix: "txt"  // so a name typed without an extension still saves
         nameFilters: ["Text (*.txt)", "Word document (*.docx)"]
         onAccepted: bridge.saveSummary(selectedFile.toString(), selectedFile.toString().endsWith(".docx"))
     }

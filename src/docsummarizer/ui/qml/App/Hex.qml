@@ -19,34 +19,37 @@ Item {
     Shape {
         anchors.fill: parent
         antialiasing: true
+        // Draw from the actual rendered size (width/height) rather than the
+        // `size` property, so an anchored Hex (e.g. anchors.fill) fills its slot
+        // instead of drawing a fixed 24px shape in the corner.
         ShapePath {
             fillColor: hex.fill
             strokeColor: hex.stroke
             strokeWidth: 1
-            startX: hex.size / 2
+            startX: hex.width / 2
             startY: 0
             PathLine {
-                x: hex.size
-                y: hex.size * 0.25
+                x: hex.width
+                y: hex.height * 0.25
             }
             PathLine {
-                x: hex.size
-                y: hex.size * 0.75
+                x: hex.width
+                y: hex.height * 0.75
             }
             PathLine {
-                x: hex.size / 2
-                y: hex.size
-            }
-            PathLine {
-                x: 0
-                y: hex.size * 0.75
+                x: hex.width / 2
+                y: hex.height
             }
             PathLine {
                 x: 0
-                y: hex.size * 0.25
+                y: hex.height * 0.75
             }
             PathLine {
-                x: hex.size / 2
+                x: 0
+                y: hex.height * 0.25
+            }
+            PathLine {
+                x: hex.width / 2
                 y: 0
             }
         }

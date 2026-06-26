@@ -3,6 +3,7 @@ Model Manager Module
 Handles downloading, loading, and running the local LLM.
 """
 
+import functools
 import json
 import os
 import time
@@ -24,6 +25,31 @@ SUMMARY_TYPE_BRIEF = "brief"
 SUMMARY_TYPE_DETAILED = "detailed"
 SUMMARY_TYPE_STRUCTURED = "structured"
 SUMMARY_TYPES = (SUMMARY_TYPE_BRIEF, SUMMARY_TYPE_DETAILED, SUMMARY_TYPE_STRUCTURED)
+
+
+@functools.lru_cache(maxsize=1)
+def gpu_offload_supported() -> bool:
+    """Whether the installed llama-cpp build can actually offload to a GPU.
+
+    A CPU-only wheel silently ignores ``n_gpu_layers``, so the UI surfaces this
+    rather than letting the GPU toggle pretend to work. Cached: the answer is
+    fixed for a given build, and importing llama-cpp is expensive.
+    """
+    try:
+        from llama_cpp import llama_supports_gpu_offload
+
+        return bool(llama_supports_gpu_offload())
+    except Exception:
+        return False
+
+
+class SummarizationCancelledError(Exception):
+    """Raised between chunks when the caller requests a clean stop."""
+
+
+def _raise_if_cancelled(should_cancel: Callable[[], bool] | None) -> None:
+    if should_cancel and should_cancel():
+        raise SummarizationCancelledError
 
 
 @dataclass(frozen=True)
@@ -561,6 +587,7 @@ class Summarizer:
         text: str,
         summary_type: str = SUMMARY_TYPE_DETAILED,
         max_tokens: int = 1024,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> str:
         """Generate a summary of the given text.
 
@@ -600,6 +627,7 @@ class Summarizer:
 
         partials = []
         for i, chunk in enumerate(chunks, 1):
+            _raise_if_cancelled(should_cancel)
             log_info(f"Summarizing chunk {i}/{len(chunks)} ({len(chunk)} chars)")
             partials.append(self._summarize_once(chunk, summary_type, max_tokens))
         combined = "\n\n".join(partials)
@@ -609,7 +637,7 @@ class Summarizer:
         # text, so this terminates.
         if len(combined) > budget_chars:
             log_info("Combined section summaries still exceed budget; reducing again")
-            return self.summarize(combined, summary_type, max_tokens)
+            return self.summarize(combined, summary_type, max_tokens, should_cancel)
 
         summary = self._synthesize(combined, summary_type, max_tokens)
         self._log_speed(summary, time.time() - start_time)
@@ -620,6 +648,7 @@ class Summarizer:
         text: str,
         summary_type: str = SUMMARY_TYPE_DETAILED,
         max_tokens: int = 1024,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> StructuredSummary:
         """Summarize into discrete, source-grounded points for the GUI.
 
@@ -637,7 +666,7 @@ class Summarizer:
         # (extracted documents commonly start with whitespace). split_sentences
         # already ignores leading/trailing whitespace for grounding.
         if summary_type == SUMMARY_TYPE_BRIEF:
-            lead = self.summarize(text, SUMMARY_TYPE_BRIEF, max_tokens)
+            lead = self.summarize(text, SUMMARY_TYPE_BRIEF, max_tokens, should_cancel)
             return StructuredSummary(SUMMARY_TYPE_BRIEF, lead or None, [], None, lead)
 
         if summary_type not in (SUMMARY_TYPE_DETAILED, SUMMARY_TYPE_STRUCTURED):
@@ -645,7 +674,9 @@ class Summarizer:
 
         log_info(f"Starting structured summarization: type={summary_type}, input_chars={len(text)}")
         try:
-            result = self._summarize_structured(text, summary_type, max_tokens)
+            result = self._summarize_structured(text, summary_type, max_tokens, should_cancel)
+        except SummarizationCancelledError:
+            raise  # a clean stop must not fall back to more inference
         except Exception as exc:
             log_warning(f"Structured summarization failed ({exc!s}); falling back to prose")
             result = None
@@ -654,7 +685,11 @@ class Summarizer:
         return result
 
     def _summarize_structured(
-        self, text: str, summary_type: str, max_tokens: int
+        self,
+        text: str,
+        summary_type: str,
+        max_tokens: int,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> StructuredSummary | None:
         """Run the structured path; ``None`` signals the caller to fall back."""
         budget_chars = (
@@ -685,6 +720,7 @@ class Summarizer:
             name: [] for name in _STRUCTURED_SECTIONS
         }
         for chunk_text, base in _split_into_chunks_with_offsets(text, budget_chars):
+            _raise_if_cancelled(should_cancel)
             parsed = _parse_structured_json(
                 self._chat_json(f"{instruction}\n\nDocument:\n{chunk_text}", max_tokens)
             )

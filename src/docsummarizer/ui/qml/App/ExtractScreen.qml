@@ -37,8 +37,7 @@ Item {
         }
         screen.matchLines = ml;
         screen.matchCount = total;
-        if (screen.activeMatch >= ml.length)
-            screen.activeMatch = 0;
+        screen.activeMatch = 0;  // a fresh search starts stepping at the first match
     }
     onQueryChanged: recomputeMatches()
     Connections {
@@ -75,8 +74,10 @@ Item {
     function stepMatch() {
         if (screen.matchLines.length === 0)
             return;
-        screen.activeMatch = (screen.activeMatch + 1) % screen.matchLines.length;
+        // Jump to the current match, then advance — so the first press lands on
+        // match 0 instead of skipping it.
         feed.positionViewAtIndex(screen.matchLines[screen.activeMatch], ListView.Center);
+        screen.activeMatch = (screen.activeMatch + 1) % screen.matchLines.length;
     }
 
     ColumnLayout {
@@ -186,6 +187,9 @@ Item {
                 anchors.margins: 16
                 clip: true
                 spacing: 2
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AlwaysOn
+                }
                 model: screen.lines()
                 delegate: RowLayout {
                     required property var modelData
