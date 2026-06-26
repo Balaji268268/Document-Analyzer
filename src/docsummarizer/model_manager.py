@@ -7,7 +7,8 @@ import functools
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -583,14 +584,109 @@ class Summarizer:
         log_debug(f"Memory after loading: {get_memory_usage_mb()} MB")
         # Set during summarize(); read per-token to interrupt generation on Stop.
         self._cancel_check: Callable[[], bool] | None = None
+        # ctypes callback objects must stay strongly referenced while llama.cpp
+        # owns the callback pointer. These are cleared after each completion.
+        self._llama_abort_callback: Any | None = None
+        self._llama_abort_callback_user_data: Any | None = None
+
+    def _llama_context(self) -> Any | None:
+        """Return the low-level llama_context pointer, if this backend exposes it."""
+        llm = self.llm
+        if llm is None:
+            return None
+        try:
+            ctx = getattr(llm, "ctx", None)
+        except Exception as exc:
+            log_debug(f"Unable to read llama ctx property: {exc!s}")
+            ctx = None
+        if ctx is not None:
+            return ctx
+        try:
+            internal_ctx = getattr(llm, "_ctx", None)
+            return getattr(internal_ctx, "ctx", None) if internal_ctx is not None else None
+        except Exception as exc:
+            log_debug(f"Unable to read llama _ctx property: {exc!s}")
+            return None
+
+    def _install_llama_abort_callback(self, check: Callable[[], bool]) -> bool:
+        """Ask llama.cpp to abort the active decode when ``check`` turns true.
+
+        This reaches into llama-cpp-python's optional low-level binding. If the
+        package, callback type, setter, or context pointer is unavailable, the
+        existing streaming cancellation path remains in force.
+        """
+        try:
+            import ctypes
+
+            from llama_cpp import llama_cpp
+        except Exception as exc:
+            log_debug(f"llama abort callback unavailable: {exc!s}")
+            return False
+
+        set_abort_callback = getattr(llama_cpp, "llama_set_abort_callback", None)
+        callback_type = getattr(llama_cpp, "ggml_abort_callback", None)
+        ctx = self._llama_context()
+        if not callable(set_abort_callback) or not callable(callback_type) or ctx is None:
+            return False
+
+        def abort_callback(_: Any) -> bool:
+            try:
+                return bool(check())
+            except Exception as exc:
+                log_debug(f"Cancel check raised inside llama abort callback: {exc!s}")
+                return False
+
+        c_callback = callback_type(abort_callback)
+        user_data = ctypes.c_void_p()
+        self._llama_abort_callback = c_callback
+        self._llama_abort_callback_user_data = user_data
+        try:
+            set_abort_callback(ctx, c_callback, user_data)
+        except Exception as exc:
+            self._llama_abort_callback = None
+            self._llama_abort_callback_user_data = None
+            log_debug(f"Unable to install llama abort callback: {exc!s}")
+            return False
+        return True
+
+    def _clear_llama_abort_callback(self) -> None:
+        """Remove any callback installed by ``_install_llama_abort_callback``."""
+        if getattr(self, "_llama_abort_callback", None) is None:
+            return
+        try:
+            import ctypes
+
+            from llama_cpp import llama_cpp
+
+            set_abort_callback = getattr(llama_cpp, "llama_set_abort_callback", None)
+            callback_type = getattr(llama_cpp, "ggml_abort_callback", None)
+            ctx = self._llama_context()
+            if callable(set_abort_callback) and callable(callback_type) and ctx is not None:
+                set_abort_callback(ctx, callback_type(), ctypes.c_void_p())
+        except Exception as exc:
+            log_debug(f"Unable to clear llama abort callback: {exc!s}")
+        finally:
+            self._llama_abort_callback = None
+            self._llama_abort_callback_user_data = None
+
+    @contextmanager
+    def _llama_abort_callback_guard(self, check: Callable[[], bool]) -> Iterator[None]:
+        """Temporarily install llama.cpp decode cancellation for one completion."""
+        installed = self._install_llama_abort_callback(check)
+        try:
+            yield
+        finally:
+            if installed:
+                self._clear_llama_abort_callback()
 
     def _complete(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
         """One chat completion.
 
         When a cancel-check is active (the GUI Stop path) the response is
-        streamed so generation can be aborted within a token of the flag being
-        set — ``create_chat_completion`` has no stopping_criteria parameter, so
-        streaming is the way to interrupt a single (possibly long) call.
+        streamed and a llama.cpp abort callback is installed so prompt
+        processing and generation can both stop soon after the flag is set.
+        ``create_chat_completion`` has no stopping_criteria parameter, so these
+        hooks are layered around the chat call instead.
         Otherwise a single blocking call is used.
         """
         llm = self.llm
@@ -600,14 +696,22 @@ class Summarizer:
         if check is None:
             response = llm.create_chat_completion(messages=messages, **kwargs)
             return str(response["choices"][0]["message"].get("content") or "").strip()
-        content = ""
-        for chunk in llm.create_chat_completion(messages=messages, stream=True, **kwargs):
-            if check():
-                raise SummarizationCancelledError
-            delta = (chunk["choices"][0].get("delta") or {}).get("content")
-            if delta:
-                content += delta
         _raise_if_cancelled(check)
+        content = ""
+        try:
+            with self._llama_abort_callback_guard(check):
+                for chunk in llm.create_chat_completion(messages=messages, stream=True, **kwargs):
+                    _raise_if_cancelled(check)
+                    delta = (chunk["choices"][0].get("delta") or {}).get("content")
+                    if delta:
+                        content += delta
+                _raise_if_cancelled(check)
+        except SummarizationCancelledError:
+            raise
+        except Exception as exc:
+            if check():
+                raise SummarizationCancelledError from exc
+            raise
         return content.strip()
 
     def summarize(
@@ -853,6 +957,7 @@ class Summarizer:
         instantiate a new Summarizer to reload. Prefer this to relying on
         `__del__`, which is unreliable during interpreter shutdown.
         """
+        self._clear_llama_abort_callback()
         if self.llm is not None:
             del self.llm
             self.llm = None
