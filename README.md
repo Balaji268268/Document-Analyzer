@@ -1,230 +1,196 @@
+<div align="center">
+
 # DocSummarizer
 
+**Offline document summarization, powered by a local language model.**
+
+Extract, chunk, and summarize academic papers and long documents entirely on your own machine — no cloud, no telemetry, no data leaving the device.
+
 [![CI](https://github.com/Wintersta7e/Doc-Summarizer/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Wintersta7e/Doc-Summarizer/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
-[![License](https://img.shields.io/github/license/Wintersta7e/Doc-Summarizer)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/Wintersta7e/Doc-Summarizer?label=release&sort=semver)](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest)
+[![Release](https://img.shields.io/github/v/release/Wintersta7e/Doc-Summarizer?label=release&sort=semver)](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#system-requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Lint: Ruff](https://img.shields.io/badge/lint-ruff-261230)](https://docs.astral.sh/ruff/)
+[![Types: mypy](https://img.shields.io/badge/types-mypy-blue)](https://mypy-lang.org/)
+[![Offline](https://img.shields.io/badge/network-100%25%20offline-success)](#privacy--security)
 
-A fully offline document summarization tool powered by a local AI model. Designed for scientists and researchers who need to quickly summarize academic papers and documents without sending data to external services.
+<img src="assets/screenshot.png" alt="DocSummarizer — Abstract Console" width="820">
 
-## Features
+</div>
 
-- **100% Offline**: After the initial model download, everything runs locally on your machine
-- **Privacy-First**: Documents never leave your computer - no cloud services, no data collection
-- **Multiple Formats**: Supports PDF, DOCX, RTF, TXT, and Markdown files
-- **Batch Processing**: Summarize entire folders of documents at once
-- **Flexible Output**: Choose between brief, detailed, or structured summaries
-- **Long Documents**: Documents larger than the context window are summarized in chunks, not truncated
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Adjustable CPU Usage**: Control how many CPU threads to use via Settings
-- **Optional GPU Acceleration**: Offload the model to an NVIDIA GPU for much faster summaries
+---
+
+## Overview
+
+DocSummarizer is a desktop application that summarizes documents with a quantized local LLM
+([Qwen3 4B Instruct](https://github.com/QwenLM/Qwen3), run via [llama.cpp](https://github.com/ggerganov/llama.cpp)).
+It is built for researchers who work with sensitive or unpublished material and cannot send it to a
+third-party API. After a one-time model download the entire pipeline — text extraction, chunking,
+inference, and provenance grounding — runs locally and air-gapped.
+
+Long documents are handled by **map-reduce summarization** (chunk → summarize each → consolidate)
+rather than truncation, so the whole document is considered. Each summary point can be traced back to
+the **source sentence** it was derived from.
+
+## Highlights
+
+- **Fully offline & private** — no network after the model download; nothing is uploaded or logged.
+- **Faithful long-document handling** — map-reduce chunking instead of a hard truncation cap.
+- **Source-grounded provenance** — click a key point to highlight the sentence it came from.
+- **Three summary modes** — brief, detailed (key points), and structured (Purpose / Method / Results / Conclusions).
+- **Batch mode** — summarize an entire folder with live per-file status.
+- **Broad format support** — PDF, DOCX, RTF, TXT, Markdown.
+- **GUI and CLI** — a Qt/QML desktop console and a scriptable command line.
+- **Single-file portable build** — ship one `.exe`; users install nothing.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A["Document<br/>PDF · DOCX · RTF · TXT · MD"] --> B["Text extraction<br/>(pypdf · python-docx · striprtf)"]
+    B --> C{"Fits context<br/>window?"}
+    C -- yes --> D["Single pass"]
+    C -- no --> E["Map-reduce<br/>chunking"]
+    D --> F["Local LLM<br/>Qwen3-4B · llama.cpp"]
+    E --> F
+    F --> G["Summary<br/>brief / detailed / structured"]
+    G --> H["Provenance grounding<br/>point → source sentence"]
+    H --> I["GUI / CLI output<br/>(.txt · .docx)"]
+```
+
+| Layer | Module | Responsibility |
+|-------|--------|----------------|
+| UI | `ui/` (`ConsoleBridge` + QML) | Qt/QML desktop console, async orchestration |
+| CLI | `cli.py` | Scriptable batch/single-file entry point |
+| Parsing | `document_parser.py` | Text extraction per format |
+| Inference | `model_manager.py` | Model download, chat-completion, map-reduce |
+| Grounding | `provenance.py` | Summary point → source-sentence matching |
 
 ## System Requirements
 
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| OS | Windows 10, macOS 10.14, Linux | Latest version |
-| RAM | 8 GB | 16 GB |
+| | Minimum | Recommended |
+|---|---------|-------------|
+| OS | Windows 10 · macOS 11 · Linux | Latest |
+| RAM | 8 GB | 16 GB+ |
 | Storage | 4 GB free | 8 GB free |
-| CPU | 4 cores | 8+ cores |
-| Python | 3.10+ | 3.11+ |
+| CPU | 4 cores | 8+ performance cores |
+| Python (from source) | 3.10 | 3.11+ |
 
-**Note**: The tool runs on CPU by default. GPU acceleration is optional — enable it in **Settings** (or pass `--gpu` on the CLI). It needs a CUDA build of `llama-cpp-python`; see [DEVELOPMENT.md](DEVELOPMENT.md) for setup.
+The prebuilt executables run on the **CPU** and require no GPU. GPU acceleration is a build-from-source
+option — see [Building from source](#building-from-source).
 
 ## Quick Start
 
-### Option A: Download Standalone Executable (Easiest)
+### Option A — Download the portable executable (no Python required)
 
-Download the latest release for your platform - no Python required:
+1. Open [Releases](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest).
+2. Download `DocSummarizer.exe` (Windows) or `DocSummarizer` (Linux).
+3. Run it. On first launch, download the model (~2.5 GB, one-time).
 
-1. Go to [Releases](https://github.com/Wintersta7e/Doc-Summarizer/releases/latest)
-2. Download:
-   - **Windows**: `DocSummarizer.exe`
-   - **Linux**: `DocSummarizer`
-3. Run the executable
-4. On first launch, click "Download Model" (~2.5 GB, one-time)
-
-### Option B: Run from Source
-
-#### 1. Clone or Download
+### Option B — Run from source
 
 ```bash
 git clone https://github.com/Wintersta7e/Doc-Summarizer.git
 cd Doc-Summarizer
+python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e ".[gui,runtime]"
+docsummarizer                                     # launch the GUI
 ```
-
-#### 2. Run Setup Script
-
-**Windows:**
-```cmd
-setup_and_run.bat
-```
-
-**Linux/macOS:**
-```bash
-chmod +x setup_and_run.sh
-./setup_and_run.sh
-```
-
-#### 3. First Launch
-
-On first launch, the application will:
-1. Create a virtual environment
-2. Install dependencies
-3. Prompt you to download the AI model (~2.5 GB, one-time)
-
-After setup, the GUI will open automatically.
 
 ## Usage
 
-### Graphical Interface (GUI)
+### Desktop app
 
-1. Launch with `python run.py` or use the setup script
-2. Click **Select File** to choose a document
-3. Select summary type: **Brief**, **Detailed**, or **Structured**
-4. Click **Summarize** and wait for processing
-5. Save the result using **Save Summary**
+1. **Drop a document** onto the window (or click **Select File**).
+2. Pick a mode — **Brief**, **Detailed**, or **Structured**.
+3. Press **Summarize**. In Detailed/Structured, click a point to trace it to its source.
+4. **Copy** or **Save Summary** (`.txt` / `.docx`). Use **Batch** for a whole folder.
 
-### Command Line Interface (CLI)
+### Command line
 
 ```bash
-# Summarize a single file
-docsummarizer-cli document.pdf
-
-# Choose summary type
-docsummarizer-cli document.pdf -t structured
-docsummarizer-cli document.pdf -t brief
-docsummarizer-cli document.pdf -t detailed
-
-# Save output to file
-docsummarizer-cli document.pdf -o summary.txt
-
-# Batch process a folder
-docsummarizer-cli ./papers/ -o ./summaries/
-
-# Offload to the GPU for this run (overrides the saved setting)
-docsummarizer-cli document.pdf --gpu
-
-# Download model only (no processing)
-docsummarizer-cli --download-only
+docsummarizer-cli document.pdf                    # detailed summary to stdout
+docsummarizer-cli document.pdf -t structured      # brief | detailed | structured
+docsummarizer-cli document.pdf -o summary.txt     # write to a file
+docsummarizer-cli ./papers/ -o ./summaries/       # batch a folder
+docsummarizer-cli --download-only                 # fetch the model, then exit
+docsummarizer-cli document.pdf --threads 8        # override CPU threads for this run
 ```
 
-### Summary Types
+### Summary modes
 
-| Type | Description | Best For |
-|------|-------------|----------|
-| **Brief** | 1 paragraph (3-5 sentences) | Quick overview |
-| **Detailed** | Comprehensive with key points | Understanding content |
-| **Structured** | Organized sections (Purpose, Methods, Conclusions, etc.) | Academic papers |
+| Mode | Output | Best for |
+|------|--------|----------|
+| **Brief** | One paragraph (3–5 sentences) | A quick gist |
+| **Detailed** | Lead + traceable key points | Reading comprehension |
+| **Structured** | Purpose · Method · Results · Conclusions | Academic papers |
 
-## Project Structure
+## Configuration
 
-```
-DocSummarizer/
-├── run.py                       # GUI entry point
-├── pyproject.toml               # Package metadata, deps, lint/type/test config
-├── README.md                    # This file
-├── DEVELOPMENT.md               # Developer documentation
-├── DocSummarizer.spec           # PyInstaller build configuration
-├── setup_and_run.bat            # Windows launcher
-├── setup_and_run.sh             # Linux/macOS launcher
-├── .github/                     # CI workflow + Dependabot config
-├── src/
-│   └── docsummarizer/           # Installable package
-│       ├── __init__.py
-│       ├── ui/                  # Qt/QML desktop UI (ConsoleBridge + qml/)
-│       ├── provenance.py        # Summary point → source sentence grounding
-│       ├── cli.py               # Command-line interface
-│       ├── document_parser.py   # Document text extraction
-│       ├── model_manager.py     # LLM download and inference
-│       ├── settings.py          # Persisted user settings (threads, GPU)
-│       ├── io_helpers.py        # Shared summary-writing helpers
-│       └── logger.py            # Logging and diagnostics
-└── tests/                       # pytest suite
-```
+Settings persist in the app-data `config/` directory and survive restarts.
 
-## How It Works
+- **CPU threads** — defaults to half the cores. On hybrid CPUs (P+E cores), a count near the number of
+  performance cores is usually fastest; raising it further can *reduce* throughput.
+- **GPU offload** — disabled in the prebuilt (CPU-only) build; the toggle reflects this. Available only
+  in a CUDA build from source.
+- **Appearance** — System / Light / Dark, restored on launch.
 
-1. **Document Parsing**: Extracts text from PDF, DOCX, and other formats using `pypdf` and `python-docx`
-2. **Chunking**: Documents larger than the context window are split so the whole document is summarized (map-reduce), not truncated
-3. **Local LLM Inference**: Uses `llama-cpp-python` to run a quantized Qwen3 4B model, applying the model's own chat template
-4. **Summary Generation**: The model generates a summary based on the selected type
-
-## Model Information
-
-| Property | Value |
-|----------|-------|
-| Model | Qwen3 4B Instruct 2507 |
-| Quantization | Q4_K_M (4-bit) |
-| Size | ~2.5 GB |
-| Source | HuggingFace (Unsloth) |
-| Context Window | 8192 tokens (longer documents are chunked) |
-
-The model is downloaded on first launch and stored in:
-- **Windows**: `%LOCALAPPDATA%\DocSummarizer\models\`
-- **macOS**: `~/Library/Application Support/DocSummarizer/models/`
-- **Linux**: `~/.local/share/DocSummarizer/models/`
+Model and logs are stored under the platform app-data directory
+(`%LOCALAPPDATA%\DocSummarizer\` on Windows, `~/Library/Application Support/DocSummarizer/` on macOS,
+`~/.local/share/DocSummarizer/` on Linux). Logs record startup, timing, and errors — **never document content**.
 
 ## Performance
 
-| Document Size | Processing Time (CPU) |
-|---------------|----------------------|
-| Short (1-5 pages) | 20-45 seconds |
-| Medium (5-15 pages) | 1-2 minutes |
-| Long (15+ pages) | 2-3 minutes |
+Summarization is compute-bound; with map-reduce, time scales with document length. Approximate CPU
+timings for the 4B Q4 model on a modern multi-core machine:
 
-**Note**: Times vary with CPU and thread settings. By default the tool uses half of the available CPU cores to balance speed and responsiveness — adjust in **Settings > CPU Threads**. Enabling **GPU acceleration** (Settings, or `--gpu`) is several times faster on a supported NVIDIA GPU.
+| Document | Approx. CPU time |
+|----------|------------------|
+| Short (1–3 pages) | ~30–90 s |
+| Research paper (~10 pages) | ~2–4 min |
+| Long (15+ pages) | 5 min+ |
 
-## Troubleshooting
+Times depend heavily on the CPU and the prompt length per chunk. A CUDA build is several times faster.
 
-### Model download fails
-- Check internet connection
-- Ensure 3+ GB free disk space
-- Try running as administrator
+## Building from source
 
-### Out of memory
-- Close other applications
-- Ensure at least 8 GB RAM
-- Process smaller documents
+```bash
+pip install -e ".[gui,runtime]" pyinstaller
+pyinstaller DocSummarizer.spec        # → dist/DocSummarizer[.exe]
+```
 
-### Slow performance
-- Normal on CPU - the model is computationally intensive
-- Enable **GPU acceleration** in Settings (or `--gpu`) if you have a supported NVIDIA GPU
-- Increase CPU threads in Settings for faster processing
-- Close other applications to free resources
+The spec bundles the QML tree, fonts, and the llama-cpp libraries into one portable file.
 
-### High CPU usage
-- Go to **Settings > CPU Threads** and lower the thread count
-- Using fewer threads reduces CPU load but increases processing time
-
-### Checking logs for errors
-Log files are stored at:
-- **Windows**: `%LOCALAPPDATA%\DocSummarizer\logs\`
-- **macOS**: `~/Library/Application Support/DocSummarizer/logs/`
-- **Linux**: `~/.local/share/DocSummarizer/logs/`
-
-Logs contain startup info, performance metrics, and error details (no document content is logged).
-
-### PDF extraction issues
-- Some scanned PDFs (image-only) cannot be parsed
-- Password-protected PDFs are not supported
-- Try converting to DOCX first
+**GPU build:** install a CUDA-enabled `llama-cpp-python` (a CUDA wheel, or build with the CUDA backend)
+into the environment *before* running PyInstaller. The result is NVIDIA-only and larger, so it is kept
+separate from the universal CPU release.
 
 ## Privacy & Security
 
-- **No internet required** after model download
-- **No telemetry** or usage tracking
-- **No data collection** - documents processed in memory only
-- **Open source** - audit the code yourself
+- **No network** after the model download — fully air-gapped.
+- **No telemetry**, no usage tracking, no document content in logs.
+- **In-memory processing** — documents are not persisted by the app.
+- **Open source** — auditable end to end.
+
+## Development
+
+Tooling is intentionally strict (broad Ruff ruleset, `mypy --strict`, pytest with a coverage floor).
+See [DEVELOPMENT.md](DEVELOPMENT.md). The quality gate (matches CI):
+
+```bash
+ruff check . && ruff format --check .
+mypy
+pytest --cov=docsummarizer
+```
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) - Efficient LLM inference
-- [Qwen](https://github.com/QwenLM/Qwen3) - Base model (Qwen3 4B Instruct)
-- [Unsloth](https://huggingface.co/unsloth) - Quantized GGUF models
-- [PySide6 / Qt](https://doc.qt.io/qtforpython/) - Native Qt/QML desktop UI
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — efficient local LLM inference
+- [Qwen3](https://github.com/QwenLM/Qwen3) — base model (Qwen3 4B Instruct)
+- [Unsloth](https://huggingface.co/unsloth) — quantized GGUF distributions
+- [PySide6 / Qt](https://doc.qt.io/qtforpython/) — Qt/QML desktop UI

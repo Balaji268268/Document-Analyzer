@@ -60,3 +60,13 @@ models/
 CLAUDE.md
 AGENTS.md
 GEMINI.md
+docs
+
+# Local test inputs (sample PDFs for manual app testing — not committed)
+test-pdfs/
+
+# Local QML render output (visual QA)
+renders/
+
+# Raw screenshot scratch (committed copy lives in assets/)
+screenshot/
