@@ -584,19 +584,31 @@ class Summarizer:
         # Set during summarize(); read per-token to interrupt generation on Stop.
         self._cancel_check: Callable[[], bool] | None = None
 
-    def _stopping_criteria(self) -> object | None:
-        """A llama-cpp stopping criteria that aborts generation when the active
-        cancel-check fires — so Stop interrupts the current chunk, not just the
-        gaps between chunks. ``None`` when there is nothing to cancel."""
+    def _complete(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
+        """One chat completion.
+
+        When a cancel-check is active (the GUI Stop path) the response is
+        streamed so generation can be aborted within a token of the flag being
+        set — ``create_chat_completion`` has no stopping_criteria parameter, so
+        streaming is the way to interrupt a single (possibly long) call.
+        Otherwise a single blocking call is used.
+        """
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError(_CLOSED_MESSAGE)
         check = self._cancel_check
         if check is None:
-            return None
-        try:
-            from llama_cpp import StoppingCriteriaList
-        except Exception:
-            return None
-        criteria: object = StoppingCriteriaList([lambda input_ids, logits: bool(check())])
-        return criteria
+            response = llm.create_chat_completion(messages=messages, **kwargs)
+            return str(response["choices"][0]["message"].get("content") or "").strip()
+        content = ""
+        for chunk in llm.create_chat_completion(messages=messages, stream=True, **kwargs):
+            if check():
+                raise SummarizationCancelledError
+            delta = (chunk["choices"][0].get("delta") or {}).get("content")
+            if delta:
+                content += delta
+        _raise_if_cancelled(check)
+        return content.strip()
 
     def summarize(
         self,
@@ -770,11 +782,8 @@ class Summarizer:
 
     def _chat_json(self, user_content: str, max_tokens: int) -> str:
         """One chat completion constrained to a JSON object, low-temperature."""
-        llm = self.llm
-        if llm is None:
-            raise RuntimeError(_CLOSED_MESSAGE)
-        response = llm.create_chat_completion(
-            messages=[
+        return self._complete(
+            [
                 {"role": "system", "content": _STRUCTURED_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
@@ -783,11 +792,7 @@ class Summarizer:
             top_p=0.9,
             seed=_STRUCTURED_SEED,
             response_format={"type": "json_object"},
-            stopping_criteria=self._stopping_criteria(),
         )
-        _raise_if_cancelled(self._cancel_check)
-        content = response["choices"][0]["message"].get("content") or ""
-        return str(content).strip()
 
     def _fallback_structured(
         self, text: str, summary_type: str, max_tokens: int
@@ -822,22 +827,15 @@ class Summarizer:
         llama.cpp wrap the message in whatever instruction format the loaded
         model expects, so swapping models doesn't require hand-editing prompts.
         """
-        llm = self.llm
-        if llm is None:
-            raise RuntimeError(_CLOSED_MESSAGE)
-        response = llm.create_chat_completion(
-            messages=[
+        return self._complete(
+            [
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             max_tokens=max_tokens,
             temperature=0.3,
             top_p=0.9,
-            stopping_criteria=self._stopping_criteria(),
         )
-        _raise_if_cancelled(self._cancel_check)
-        content = response["choices"][0]["message"].get("content") or ""
-        return str(content).strip()
 
     def _log_speed(self, summary: str, elapsed: float) -> None:
         approx_tokens = max(len(summary) // 4, 1)
