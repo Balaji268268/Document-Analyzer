@@ -33,14 +33,20 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      # llama-cpp-python is gated behind the `runtime` extra (see
-      # pyproject.toml) and intentionally NOT installed in CI: the package
-      # has no wheels for many matrix combos and source builds are slow
-      # and fragile. Tests don't import it (Llama is loaded lazily inside
-      # Summarizer.__init__), so the dev install is enough for ruff +
-      # mypy + pytest.
-      - name: Install package + dev extras
-        run: pip install -e ".[dev]"
+      # Qt needs a few shared libraries even for the offscreen platform used by
+      # the headless UI tests (no display/GPU required at runtime).
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
+      # llama-cpp-python is gated behind the `runtime` extra and intentionally
+      # NOT installed in CI: it has no wheels for many matrix combos and source
+      # builds are slow/fragile. Tests stub the lazy Llama import. The `gui`
+      # extra (PySide6) IS installed so mypy can type-check the ui package and
+      # the offscreen UI tests can run.
+      - name: Install package + dev/gui extras
+        run: pip install -e ".[dev,gui]"
 
       - name: Lint (ruff)
         run: ruff check .
@@ -52,4 +58,7 @@ jobs:
         run: mypy
 
       - name: Tests (pytest + coverage gate)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
         run: pytest -ra --cov=docsummarizer --cov-report=term-missing

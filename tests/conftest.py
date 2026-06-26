@@ -10,9 +10,21 @@ automatically for every test.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pytest
+
+# Skip the Qt UI tests where PySide6 isn't installed (keeps a minimal env green).
+try:
+    import PySide6  # noqa: F401
+except ImportError:
+    collect_ignore_glob = ["test_ui_*.py"]
+
+# Qt UI tests run headless: offscreen platform + software Qt Quick backend so no
+# display or GPU/GL is required.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
 
 @pytest.fixture(autouse=True)

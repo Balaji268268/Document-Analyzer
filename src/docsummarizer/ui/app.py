@@ -1,0 +1,55 @@
+"""Qt/QML application entry point.
+
+Boots a ``QQmlApplicationEngine``, wires the ``ConsoleBridge`` in as the ``bridge``
+context object, and loads ``App/Main.qml``. Run with ``python -m docsummarizer.ui.app``
+(a console entry point replaces ``run.py`` when the CustomTkinter GUI is retired).
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+
+from docsummarizer.logger import log_startup
+from docsummarizer.ui.bridge import ConsoleBridge
+
+_QML_DIR = Path(__file__).parent / "qml"
+_MAIN_QML = _QML_DIR / "App" / "Main.qml"
+
+
+def create_engine(app: QGuiApplication) -> tuple[QQmlApplicationEngine, ConsoleBridge]:
+    """Build the QML engine + bridge and load the root window.
+
+    Returns the engine and bridge (kept alive by the caller). Raises
+    ``RuntimeError`` if the QML failed to instantiate.
+    """
+    engine = QQmlApplicationEngine()
+    bridge = ConsoleBridge()
+    engine.addImportPath(str(_QML_DIR))
+    engine.rootContext().setContextProperty("bridge", bridge)
+    app.aboutToQuit.connect(bridge.shutdown)
+    engine.load(QUrl.fromLocalFile(str(_MAIN_QML)))
+    if not engine.rootObjects():
+        raise RuntimeError(f"Failed to load QML from {_MAIN_QML}")
+    return engine, bridge
+
+
+def main() -> int:
+    """Launch the DocSummarizer console UI."""
+    log_startup()
+    app = QGuiApplication(sys.argv)
+    app.setApplicationName("DocSummarizer")
+    app.setOrganizationName("DocSummarizer")
+    # Keep the engine referenced for the app's lifetime (GC would tear down the
+    # window). bridge is owned by the engine's context but used here too.
+    _engine, bridge = create_engine(app)
+    bridge.checkModel()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -54,6 +54,12 @@ dev = [
     "ruff>=0.15,<0.16",
     "mypy>=2.1,<3",
 ]
+gui = [
+    # Native Qt/QML desktop UI (the "Abstract Console" redesign). Optional so a
+    # CLI-only install stays lean; required to launch the desktop app and to
+    # type-check / test the ui package.
+    "PySide6>=6.7,<7",
+]
 
 [project.scripts]
 docsummarizer-cli = "docsummarizer.cli:main"
@@ -134,6 +140,9 @@ ignore = [
 # Tests legitimately assert (S101), reach into private helpers (SLF001),
 # and use bugbear-flagged fixture patterns (B).
 "tests/*" = ["S101", "SLF001", "B"]
+# Qt requires camelCase for QObject signals/slots/properties so QML can bind
+# them; pep8-naming (N802/N815) does not apply to the Qt UI bridge.
+"src/docsummarizer/ui/*" = ["N802", "N815"]
 
 [tool.ruff.format]
 docstring-code-format = true
