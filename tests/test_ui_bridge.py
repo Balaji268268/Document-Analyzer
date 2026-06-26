@@ -42,6 +42,9 @@ class _FakeSummarizer:
             "rendered text",
         )
 
+    def summarize(self, text: str, summary_type: str = SUMMARY_TYPE_DETAILED) -> str:
+        return "FAKE PLAIN SUMMARY"
+
     def close(self) -> None:
         self.closed = True
 
@@ -154,3 +157,40 @@ def test_reload_not_armed_without_loaded_model(qapp) -> None:
     bridge = _bridge()  # no checkModel → no summarizer
     bridge.setThreads(5)
     assert bridge._get_reload_armed() is False
+
+
+# --------------------------------------------------------------------------- #
+# Batch
+# --------------------------------------------------------------------------- #
+def test_batch_process_summarizes_folder(qapp, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
+    bridge = _bridge()
+    bridge.checkModel()
+
+    (tmp_path / "a.txt").write_text("Document A content here.", encoding="utf-8")
+    (tmp_path / "b.md").write_text("Document B content here.", encoding="utf-8")
+    (tmp_path / "ignore.png").write_bytes(b"not a document")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    spy = QSignalSpy(bridge.batchComplete)
+    bridge.batchProcess(str(tmp_path), str(out))
+
+    assert spy.count() == 1
+    done_count, total, failures, _out_dir = spy.at(0)
+    assert done_count == 2
+    assert total == 2  # the .png is not a supported document
+    assert failures == []
+    assert (out / "a_summary.txt").exists()
+    assert (out / "b_summary.txt").exists()
+
+
+def test_batch_process_no_documents_emits_toast(qapp, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
+    bridge = _bridge()
+    bridge.checkModel()
+    out = tmp_path / "out"
+    out.mkdir()
+    spy = QSignalSpy(bridge.toast)
+    bridge.batchProcess(str(tmp_path), str(out))  # empty folder
+    assert spy.count() == 1

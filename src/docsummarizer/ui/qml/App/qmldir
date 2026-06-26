@@ -5,3 +5,7 @@ TopBar 1.0 TopBar.qml
 Rail 1.0 Rail.qml
 SegmentedControl 1.0 SegmentedControl.qml
 SummaryScreen 1.0 SummaryScreen.qml
+ExtractScreen 1.0 ExtractScreen.qml
+BatchScreen 1.0 BatchScreen.qml
+ConfigScreen 1.0 ConfigScreen.qml
+FirstRunOverlay 1.0 FirstRunOverlay.qml

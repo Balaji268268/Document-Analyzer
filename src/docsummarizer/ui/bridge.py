@@ -107,6 +107,8 @@ class ConsoleBridge(QObject):
     loadComplete = Signal(bool, str)
     toast = Signal(str)
     savedFlash = Signal()
+    batchProgress = Signal(int, int, str)
+    batchComplete = Signal(int, int, list, str)
 
     def __init__(
         self,
@@ -477,6 +479,54 @@ class ConsoleBridge(QObject):
         save_settings(self._settings)  # appearance persists + applies immediately
         self.settingsChanged.emit()
         self.savedFlash.emit()
+
+    # -- batch -------------------------------------------------------------- #
+    @Slot(str, str)
+    def batchProcess(self, folder_path: str, out_dir: str) -> None:
+        """Summarize every supported document in a folder, writing .txt outputs."""
+        summarizer = self._get_summarizer()
+        if summarizer is None or self._busy:
+            return
+        folder = Path(folder_path.removeprefix("file://"))
+        out = Path(out_dir.removeprefix("file://"))
+        summary_type = self._summary_type
+        files = document_parser.find_documents(folder)
+        if not files:
+            self.toast.emit("No supported documents in that folder")
+            return
+        total = len(files)
+        self._set_busy(True)
+        self._set_status(f"Processing 0/{total}…", "ok")
+
+        def work() -> tuple[int, list[dict[str, str]]]:
+            done_count = 0
+            failures: list[dict[str, str]] = []
+            for index, path in enumerate(files):
+                self.batchProgress.emit(index, total, path.name)
+                text, error = document_parser.extract_text(str(path))
+                if error:
+                    failures.append({"name": path.name, "error": error})
+                    continue
+                try:
+                    summary = summarizer.summarize(text, summary_type)
+                    write_summary_txt(
+                        out / f"{path.stem}_summary.txt",
+                        source_name=path.name,
+                        summary=summary,
+                        summary_type=summary_type,
+                    )
+                    done_count += 1
+                except Exception as exc:  # one bad file must not abort the batch
+                    failures.append({"name": path.name, "error": str(exc)})
+            return done_count, failures
+
+        def done(result: Any) -> None:
+            done_count, failures = result
+            color = "ok" if not failures else "warn"
+            self._finish(f"Batch complete: {done_count}/{total}", color)
+            self.batchComplete.emit(done_count, total, failures, str(out))
+
+        self._run(work, done)
 
     @Slot()
     def shutdown(self) -> None:
