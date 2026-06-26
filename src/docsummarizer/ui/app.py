@@ -27,8 +27,11 @@ def create_engine(app: QGuiApplication) -> tuple[QQmlApplicationEngine, ConsoleB
     Returns the engine and bridge (kept alive by the caller). Raises
     ``RuntimeError`` if the QML failed to instantiate.
     """
+    from docsummarizer.ui.fonts import register_fonts
+
     engine = QQmlApplicationEngine()
     bridge = ConsoleBridge()
+    register_fonts()  # so QML resolves Cormorant/Chakra/Saira/Share Tech Mono
     engine.addImportPath(str(_QML_DIR))
     engine.rootContext().setContextProperty("bridge", bridge)
     app.aboutToQuit.connect(bridge.shutdown)

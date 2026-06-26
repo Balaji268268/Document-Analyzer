@@ -1,38 +1,34 @@
+// Item-rooted mirror of Main.qml's shell, for offscreen rendering via QQuickView
+// (an ApplicationWindow can't be grabbed the same way). Used only by render_qml.py.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Shapes
 import App
 
-// Application shell: persistent top bar + LCARS rail + a screen Loader, with the
-// first-run download overlay on top. The 1240px design width is the minimum;
-// the window is resizable.
-ApplicationWindow {
-    id: win
-    visible: true
+Rectangle {
+    id: root
     width: 1240
-    height: 760
-    minimumWidth: 1000
-    minimumHeight: 640
-    title: "DocSummarizer — Abstract Console"
+    height: 820
     color: Theme.pageBg
 
-    // NB: not "screen" — ApplicationWindow already defines a `screen` (QScreen).
-    property string activeScreen: "summary"
-    property bool forceFirstRun: false
+    property string screen: "summary"
+    property bool firstRun: false
+    property bool darkTheme: true
+    onDarkThemeChanged: Theme.dark = darkTheme
+    Component.onCompleted: Theme.dark = root.darkTheme
 
-    // Radial page vignette (lighter at top-center, darkening to the edges).
     Shape {
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
         ShapePath {
             strokeWidth: -1
             fillGradient: RadialGradient {
-                centerX: win.width / 2
-                centerY: -win.height * 0.18
-                centerRadius: win.width * 0.95
-                focalX: win.width / 2
-                focalY: -win.height * 0.18
+                centerX: root.width / 2
+                centerY: -root.height * 0.18
+                centerRadius: root.width * 0.95
+                focalX: root.width / 2
+                focalY: -root.height * 0.18
                 GradientStop {
                     position: 0.0
                     color: Theme.pageTop
@@ -49,31 +45,21 @@ ApplicationWindow {
             startX: 0
             startY: 0
             PathLine {
-                x: win.width
+                x: root.width
                 y: 0
             }
             PathLine {
-                x: win.width
-                y: win.height
+                x: root.width
+                y: root.height
             }
             PathLine {
                 x: 0
-                y: win.height
+                y: root.height
             }
         }
     }
-
-    // Faint 40px instrument grid.
     Canvas {
         anchors.fill: parent
-        onWidthChanged: requestPaint()
-        onHeightChanged: requestPaint()
-        Connections {
-            target: Theme
-            function onDarkChanged() {
-                parent.requestPaint();
-            }
-        }
         onPaint: {
             var ctx = getContext("2d");
             ctx.clearRect(0, 0, width, height);
@@ -97,69 +83,55 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
-
         TopBar {
             Layout.fillWidth: true
         }
-
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
-
             Rail {
                 Layout.fillHeight: true
-                currentScreen: win.activeScreen
-                onNavigate: name => win.activeScreen = name
+                currentScreen: root.screen
             }
-
             Loader {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 sourceComponent: {
-                    switch (win.activeScreen) {
+                    switch (root.screen) {
                     case "extract":
-                        return extractComponent;
+                        return extractC;
                     case "batch":
-                        return batchComponent;
+                        return batchC;
                     case "config":
-                        return configComponent;
+                        return configC;
                     default:
-                        return summaryComponent;
+                        return summaryC;
                     }
                 }
             }
         }
     }
-
     Component {
-        id: summaryComponent
+        id: summaryC
         SummaryScreen {}
     }
     Component {
-        id: extractComponent
+        id: extractC
         ExtractScreen {}
     }
     Component {
-        id: batchComponent
+        id: batchC
         BatchScreen {}
     }
     Component {
-        id: configComponent
-        ConfigScreen {
-            onReinitialize: win.forceFirstRun = true
-        }
+        id: configC
+        ConfigScreen {}
     }
-
-    // One-time model download, shown on first run or when re-initialized.
     FirstRunOverlay {
         anchors.fill: parent
-        shown: !bridge.modelDownloaded || win.forceFirstRun
+        shown: root.firstRun
         visible: shown
-        onEnter: {
-            win.forceFirstRun = false;
-            bridge.checkModel();
-        }
     }
 
     Toast {

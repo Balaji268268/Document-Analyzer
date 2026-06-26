@@ -109,6 +109,7 @@ class ConsoleBridge(QObject):
     savedFlash = Signal()
     batchProgress = Signal(int, int, str)
     batchComplete = Signal(int, int, list, str)
+    batchRowsChanged = Signal()
 
     def __init__(
         self,
@@ -134,6 +135,7 @@ class ConsoleBridge(QObject):
         self._reload_armed = False
         self._download_pct = 0.0
         self._downloading = False
+        self._batch_rows: list[dict[str, Any]] = []
 
     # -- threading seam ----------------------------------------------------- #
     def _run(self, work: Callable[[], Any], on_done: Callable[[Any], None]) -> None:
@@ -261,6 +263,11 @@ class ConsoleBridge(QObject):
         return self._download_pct
 
     downloadPercent = Property(float, _get_download_pct, notify=downloadChanged)
+
+    def _get_batch_rows(self) -> list[dict[str, Any]]:
+        return self._batch_rows
+
+    batchRows = Property(list, _get_batch_rows, notify=batchRowsChanged)
 
     # -- internal state setters (emit on change) --------------------------- #
     def _set_busy(self, value: bool) -> None:
@@ -483,7 +490,11 @@ class ConsoleBridge(QObject):
     # -- batch -------------------------------------------------------------- #
     @Slot(str, str)
     def batchProcess(self, folder_path: str, out_dir: str) -> None:
-        """Summarize every supported document in a folder, writing .txt outputs."""
+        """Summarize every supported document in a folder, writing .txt outputs.
+
+        Maintains ``batchRows`` (a list of {name, status, tokens}) so the UI can
+        show per-file QUEUED → PROCESSING → DONE/FAILED status as work proceeds.
+        """
         summarizer = self._get_summarizer()
         if summarizer is None or self._busy:
             return
@@ -495,16 +506,28 @@ class ConsoleBridge(QObject):
             self.toast.emit("No supported documents in that folder")
             return
         total = len(files)
+        self._batch_rows = [{"name": f.name, "status": "QUEUED", "tokens": 0} for f in files]
+        self.batchRowsChanged.emit()
         self._set_busy(True)
         self._set_status(f"Processing 0/{total}…", "ok")
+
+        def set_row(index: int, status: str, tokens: int = 0) -> None:
+            rows = [dict(r) for r in self._batch_rows]
+            rows[index]["status"] = status
+            if tokens:
+                rows[index]["tokens"] = tokens
+            self._batch_rows = rows
+            self.batchRowsChanged.emit()
 
         def work() -> tuple[int, list[dict[str, str]]]:
             done_count = 0
             failures: list[dict[str, str]] = []
             for index, path in enumerate(files):
+                set_row(index, "PROCESSING")
                 self.batchProgress.emit(index, total, path.name)
                 text, error = document_parser.extract_text(str(path))
                 if error:
+                    set_row(index, "FAILED")
                     failures.append({"name": path.name, "error": error})
                     continue
                 try:
@@ -515,8 +538,10 @@ class ConsoleBridge(QObject):
                         summary=summary,
                         summary_type=summary_type,
                     )
+                    set_row(index, "DONE", max(len(summary) // 4, 1))
                     done_count += 1
                 except Exception as exc:  # one bad file must not abort the batch
+                    set_row(index, "FAILED")
                     failures.append({"name": path.name, "error": str(exc)})
             return done_count, failures
 

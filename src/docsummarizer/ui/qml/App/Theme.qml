@@ -11,9 +11,12 @@ QtObject {
 
     // Surfaces
     readonly property color pageBg: dark ? "#080d14" : "#eef2f6"
+    readonly property color pageTop: dark ? "#0d1721" : "#ffffff"
+    readonly property color pageBottom: dark ? "#060a0f" : "#e3e9ef"
     readonly property color shellTop: dark ? "#0b121a" : "#ffffff"
     readonly property color shellBottom: dark ? "#080d13" : "#f6f9fb"
     readonly property color block: dark ? "#0e1820" : "#eaeff3"
+    readonly property color kpRest: dark ? Qt.rgba(1, 1, 1, 0.012) : Qt.rgba(0.08, 0.16, 0.24, 0.015)
     readonly property color hexBg: dark ? "#0a1c22" : "#e2edf1"
     readonly property color srcPane: dark ? Qt.rgba(0, 0, 0, 0.18) : Qt.rgba(0.118, 0.353, 0.471, 0.04)
     readonly property color overlay: dark ? Qt.rgba(0.016, 0.027, 0.043, 0.78) : Qt.rgba(0.882, 0.91, 0.933, 0.82)
@@ -39,6 +42,7 @@ QtObject {
     readonly property color onAccent: dark ? "#06222a" : "#ffffff"
     readonly property color brass: dark ? "#d8bd86" : "#8c6f33"
     readonly property color brassDot: dark ? "#c7a96b" : "#b08d45"
+    readonly property color brassRing: dark ? Qt.rgba(0.78, 0.66, 0.42, 0.32) : Qt.rgba(0.59, 0.47, 0.22, 0.36)
 
     // Status colors (keyed by ConsoleBridge.statusColor: ok|warn|error)
     readonly property color statusOk: accent

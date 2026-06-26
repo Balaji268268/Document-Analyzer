@@ -3,65 +3,80 @@ import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import App
 
-// Raw extraction view: shows the verbatim text the parser pulled out of the
-// loaded document, with a live case-insensitive search that highlights every
-// match inline. Mirrors SummaryScreen's escapeHtml/cssRgba idioms; the feed is
-// a read-only RichText TextEdit so highlights render as <span> backgrounds.
+// Raw extracted text: line-numbered feed with live search (highlight + count +
+// step-to-match). Matches the prototype's Extract view.
 Item {
     id: screen
 
-    property int matchCount: 0
+    property string query: ""
+    property int activeMatch: 0
 
-    function cssRgba(c, a) {
-        return "rgba(" + Math.round(c.r * 255) + "," + Math.round(c.g * 255) + "," + Math.round(c.b * 255) + "," + a + ")";
+    function lines() {
+        return bridge.extractedText.split("\n");
+    }
+    function wordCount() {
+        return bridge.extractedText.split(/\s+/).filter(Boolean).length;
+    }
+
+    // [{line, count}] and total matches, recomputed when query/text changes.
+    property var matchLines: []
+    property int matchCount: 0
+    function recomputeMatches() {
+        var q = screen.query.toLowerCase();
+        var ml = [];
+        var total = 0;
+        if (q !== "") {
+            var ls = screen.lines();
+            for (var i = 0; i < ls.length; i++) {
+                var c = ls[i].toLowerCase().split(q).length - 1;
+                if (c > 0) {
+                    ml.push(i);
+                    total += c;
+                }
+            }
+        }
+        screen.matchLines = ml;
+        screen.matchCount = total;
+        if (screen.activeMatch >= ml.length)
+            screen.activeMatch = 0;
+    }
+    onQueryChanged: recomputeMatches()
+    Connections {
+        target: bridge
+        function onDocChanged() {
+            screen.recomputeMatches();
+        }
     }
 
     function escapeHtml(s) {
         return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
-
-    function renderFeed() {
-        var raw = bridge.extractedText;
-        var term = search.text;
-        if (raw === "") {
-            screen.matchCount = 0;
-            return "";
-        }
-        if (term === "") {
-            screen.matchCount = 0;
-            return escapeHtml(raw);
-        }
-        var lowerRaw = raw.toLowerCase();
-        var lowerTerm = term.toLowerCase();
-        var style = "background-color:" + cssRgba(Theme.accent, 0.28) + ";color:" + cssRgba(Theme.onAccent, 1.0);
+    function cssRgba(c, a) {
+        return "rgba(" + Math.round(c.r * 255) + "," + Math.round(c.g * 255) + "," + Math.round(c.b * 255) + "," + a + ")";
+    }
+    function highlight(line) {
+        var q = screen.query;
+        if (q === "")
+            return escapeHtml(line);
+        var lc = line.toLowerCase();
+        var ql = q.toLowerCase();
         var out = "";
-        var from = 0;
-        var count = 0;
-        var idx = lowerRaw.indexOf(lowerTerm, from);
-        while (idx !== -1) {
-            out += escapeHtml(raw.substring(from, idx));
-            var hit = escapeHtml(raw.substring(idx, idx + term.length));
-            out += "<span style='" + style + "'>" + hit + "</span>";
-            count += 1;
-            from = idx + term.length;
-            idx = lowerRaw.indexOf(lowerTerm, from);
+        var i = 0;
+        var idx;
+        var style = "background-color:" + cssRgba(Theme.accent, 0.10) + ";color:" + cssRgba(Theme.accent2, 1.0);
+        while ((idx = lc.indexOf(ql, i)) >= 0) {
+            out += escapeHtml(line.substring(i, idx));
+            out += "<span style='" + style + "'>" + escapeHtml(line.substring(idx, idx + q.length)) + "</span>";
+            i = idx + q.length;
         }
-        out += escapeHtml(raw.substring(from));
-        screen.matchCount = count;
+        out += escapeHtml(line.substring(i));
         return out;
     }
-
-    function refresh() {
-        feed.text = screen.renderFeed();
-    }
-
-    Component.onCompleted: screen.refresh()
-
-    Connections {
-        target: bridge
-        function onDocChanged() {
-            screen.refresh();
-        }
+    function stepMatch() {
+        if (screen.matchLines.length === 0)
+            return;
+        screen.activeMatch = (screen.activeMatch + 1) % screen.matchLines.length;
+        feed.positionViewAtIndex(screen.matchLines[screen.activeMatch], ListView.Center);
     }
 
     ColumnLayout {
@@ -73,86 +88,91 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 16
-
             ColumnLayout {
-                spacing: 4
-                Text {
+                spacing: 5
+                SectionLabel {
                     text: "RAW EXTRACTION"
-                    color: Theme.label
-                    font.family: Theme.ui
-                    font.pixelSize: 10
-                    font.letterSpacing: 2.2
                 }
                 Text {
                     text: bridge.currentFileName !== "" ? bridge.currentFileName : "No document loaded"
                     color: Theme.ink
                     font.family: Theme.serif
-                    font.pixelSize: 28
+                    font.pixelSize: 30
+                    font.weight: Font.DemiBold
                 }
                 Text {
-                    text: {
-                        var t = bridge.extractedText;
-                        return t.split(/\s+/).filter(Boolean).length + " WORDS · " + t.length + " CHARS";
-                    }
+                    text: screen.wordCount().toLocaleString(Qt.locale(), "f", 0) + " WORDS · " + bridge.extractedText.length.toLocaleString(Qt.locale(), "f", 0) + " CHARS · UTF-8 · pypdf"
                     color: Theme.faint
                     font.family: Theme.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.2
+                    font.pixelSize: 9
+                    font.letterSpacing: 1
                 }
             }
-
             Item {
                 Layout.fillWidth: true
             }
-
-            ColumnLayout {
-                spacing: 6
+            // Search field with glyph + inline count.
+            Rectangle {
+                Layout.preferredWidth: 240
+                Layout.preferredHeight: 32
+                radius: 2
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.line2
                 RowLayout {
-                    spacing: 10
-                    Rectangle {
-                        Layout.preferredWidth: 220
-                        Layout.preferredHeight: 34
-                        radius: 3
-                        color: Theme.srcPane
-                        border.width: 1
-                        border.color: search.activeFocus ? Theme.ring : Theme.line
-                        TextField {
-                            id: search
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            verticalAlignment: TextInput.AlignVCenter
-                            placeholderText: "Search…"
-                            placeholderTextColor: Theme.dim
-                            color: Theme.inkSoft
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 6
+                    Text {
+                        text: "⌕"
+                        color: Theme.faint
+                        font.pixelSize: 13
+                    }
+                    TextInput {
+                        id: searchInput
+                        Layout.fillWidth: true
+                        color: Theme.ink
+                        font.family: Theme.body
+                        font.pixelSize: 12
+                        clip: true
+                        onTextChanged: screen.query = text
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: searchInput.text === ""
+                            text: "search text…"
+                            color: Theme.dim
                             font.family: Theme.body
-                            font.pixelSize: 13
-                            background: Item {}
-                            onTextChanged: screen.refresh()
+                            font.pixelSize: 12
                         }
                     }
-                    Button {
-                        text: "Copy All"
-                        enabled: bridge.extractedText !== ""
-                        onClicked: {
-                            feed.selectAll();
-                            feed.copy();
-                            feed.deselect();
-                        }
+                    Text {
+                        visible: screen.query !== ""
+                        text: screen.matchCount === 0 ? "NO MATCH" : screen.matchCount + (screen.matchCount === 1 ? " MATCH" : " MATCHES")
+                        color: screen.matchCount === 0 ? Theme.dim : Theme.accent
+                        font.family: Theme.mono
+                        font.pixelSize: 9
+                        font.letterSpacing: 0.5
                     }
                 }
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: screen.matchCount + " MATCHES"
-                    color: screen.matchCount > 0 ? Theme.accent : Theme.faint
-                    font.family: Theme.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1
+            }
+            ConsoleButton {
+                text: "▸"
+                enabled: screen.matchCount > 0
+                onClicked: screen.stepMatch()
+            }
+            ConsoleButton {
+                text: "Copy All"
+                onClicked: {
+                    copyHelper.text = bridge.extractedText;
+                    copyHelper.selectAll();
+                    copyHelper.copy();
+                    bridge.toast("Extracted text copied");
                 }
             }
         }
 
-        // -- Feed ---------------------------------------------------------- //
+        // -- Numbered feed ------------------------------------------------- //
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -160,48 +180,43 @@ Item {
             color: Theme.srcPane
             border.width: 1
             border.color: Theme.line
-
-            Flickable {
-                id: flick
+            ListView {
+                id: feed
                 anchors.fill: parent
                 anchors.margins: 16
                 clip: true
-                contentWidth: width
-                contentHeight: feed.implicitHeight
-
-                TextEdit {
-                    id: feed
-                    width: parent.width
-                    readOnly: true
-                    selectByMouse: true
-                    wrapMode: Text.WordWrap
-                    textFormat: TextEdit.RichText
-                    color: Theme.text
-                    font.family: Theme.body
-                    font.pixelSize: 15
+                spacing: 2
+                model: screen.lines()
+                delegate: RowLayout {
+                    required property var modelData
+                    required property int index
+                    width: feed.width
+                    spacing: 14
+                    Text {
+                        Layout.preferredWidth: 30
+                        horizontalAlignment: Text.AlignRight
+                        text: String(index + 1).padStart(3, "0")
+                        color: Theme.dim
+                        font.family: Theme.mono
+                        font.pixelSize: 10
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        textFormat: Text.RichText
+                        text: screen.highlight(modelData)
+                        color: Theme.text
+                        font.family: Theme.body
+                        font.pixelSize: 13
+                        lineHeight: 1.5
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
         }
+    }
 
-        // -- Footer -------------------------------------------------------- //
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Text {
-                text: bridge.statusText !== "" ? "● " + bridge.statusText : ""
-                color: Theme.statusColorFor(bridge.statusColor)
-                font.family: Theme.mono
-                font.pixelSize: 10
-                font.letterSpacing: 1
-            }
-            Item {
-                Layout.fillWidth: true
-            }
-            Button {
-                text: "Summarize"
-                enabled: bridge.canSummarize && !bridge.busy
-                onClicked: bridge.summarize()
-            }
-        }
+    TextEdit {
+        id: copyHelper
+        visible: false
     }
 }

@@ -139,6 +139,8 @@ ignore = [
 # Qt requires camelCase for QObject signals/slots/properties so QML can bind
 # them; pep8-naming (N802/N815) does not apply to the Qt UI bridge.
 "src/docsummarizer/ui/*" = ["N802", "N815"]
+# Dev/QA scripts may seed bridge internals for offscreen rendering.
+"scripts/*" = ["SLF001"]
 
 [tool.ruff.format]
 docstring-code-format = true

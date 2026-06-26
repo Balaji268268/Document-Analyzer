@@ -4,215 +4,207 @@ import QtQuick.Controls.Basic
 import QtQuick.Dialogs
 import App
 
-// Batch view: pick an input folder + an output folder, then run the model
-// across every document in the queue. Overall progress + the current file
-// name stream in from the bridge's batchProgress / batchComplete signals.
+// Batch queue: pick a folder + output dir, process all supported docs, and watch
+// per-file status (QUEUED → PROCESSING → DONE/FAILED) plus an overall bar.
 Item {
     id: screen
 
     property string folder: ""
     property string outDir: ""
-    property int total: 0
-    property int done: 0
+    property int doneCount: 0
+    property int totalCount: 0
     property real progress: 0
-    property string currentName: ""
 
-    function urlToPath(url) {
-        var s = String(url);
-        if (s.indexOf("file://") === 0)
-            return s.substring(7);
-        return s;
+    function pathOf(url) {
+        return url.toString().replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "");
     }
 
     Connections {
         target: bridge
         function onBatchProgress(done, total, name) {
-            screen.done = done;
-            screen.total = total;
-            screen.currentName = name;
+            screen.totalCount = total;
             screen.progress = total > 0 ? done / total : 0;
         }
-        function onBatchComplete(done, total, failures, outDir) {
-            screen.done = done;
-            screen.total = total;
+        function onBatchComplete(done, total, failures, outFolder) {
+            screen.doneCount = done;
+            screen.totalCount = total;
             screen.progress = 1;
         }
     }
 
     FolderDialog {
-        id: inputDialog
-        title: "Choose input folder"
-        onAccepted: screen.folder = screen.urlToPath(selectedFolder)
+        id: folderDialog
+        onAccepted: screen.folder = screen.pathOf(selectedFolder)
     }
-
     FolderDialog {
         id: outputDialog
-        title: "Choose output folder"
-        onAccepted: screen.outDir = screen.urlToPath(selectedFolder)
+        onAccepted: screen.outDir = screen.pathOf(selectedFolder)
     }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
-        spacing: 18
+        spacing: 16
 
         // -- Header -------------------------------------------------------- //
         RowLayout {
             Layout.fillWidth: true
             spacing: 16
-
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 4
-                Text {
+                spacing: 5
+                SectionLabel {
                     text: "BATCH QUEUE"
-                    color: Theme.label
-                    font.family: Theme.ui
-                    font.pixelSize: 10
-                    font.letterSpacing: 2.2
                 }
                 Text {
-                    Layout.fillWidth: true
                     text: screen.folder !== "" ? screen.folder : "Choose a folder…"
                     color: Theme.ink
                     font.family: Theme.serif
-                    font.pixelSize: 28
-                    elide: Text.ElideMiddle
+                    font.pixelSize: 30
+                    font.weight: Font.DemiBold
                 }
                 Text {
-                    Layout.fillWidth: true
-                    text: screen.total + " DOCUMENTS · OUTPUT → " + (screen.outDir !== "" ? screen.outDir : "—") + " · " + String(bridge.summaryType).toUpperCase()
+                    text: bridge.batchRows.length + " DOCUMENTS · OUTPUT → " + (screen.outDir !== "" ? screen.outDir : "—") + " · " + bridge.summaryType.toUpperCase()
                     color: Theme.faint
                     font.family: Theme.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.2
-                    elide: Text.ElideMiddle
-                }
-            }
-
-            ColumnLayout {
-                spacing: 8
-                Layout.alignment: Qt.AlignTop
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: screen.done + "/" + screen.total
-                    color: Theme.accent2
-                    font.family: Theme.mono
-                    font.pixelSize: 22
+                    font.pixelSize: 9
                     font.letterSpacing: 1
                 }
-                RowLayout {
-                    spacing: 8
-                    Button {
-                        text: "Add Folder"
-                        onClicked: inputDialog.open()
-                    }
-                    Button {
-                        text: "Output…"
-                        onClicked: outputDialog.open()
-                    }
-                    Button {
-                        text: "Process All"
-                        enabled: screen.folder !== "" && screen.outDir !== "" && bridge.modelReady && !bridge.busy
-                        onClicked: bridge.batchProcess(screen.folder, screen.outDir)
-                    }
-                }
-            }
-        }
-
-        // -- Overall progress ---------------------------------------------- //
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 3
-            color: Theme.srcPane
-            border.width: 1
-            border.color: Theme.line
-            implicitHeight: progressCol.implicitHeight + 32
-
-            ColumnLayout {
-                id: progressCol
-                anchors.fill: parent
-                anchors.margins: 16
-                spacing: 10
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 12
-                    Text {
-                        text: "OVERALL"
-                        color: Theme.label
-                        font.family: Theme.ui
-                        font.pixelSize: 10
-                        font.letterSpacing: 2.2
-                    }
-                    Item {
-                        Layout.fillWidth: true
-                    }
-                    Text {
-                        text: Math.round(screen.progress * 100) + "%"
-                        color: Theme.accent
-                        font.family: Theme.mono
-                        font.pixelSize: 12
-                        font.letterSpacing: 1
-                    }
-                }
-
-                ProgressBar {
-                    id: overallBar
-                    Layout.fillWidth: true
-                    from: 0
-                    to: 1
-                    value: screen.progress
-
-                    background: Rectangle {
-                        implicitHeight: 6
-                        radius: 3
-                        color: Theme.block
-                        border.width: 1
-                        border.color: Theme.line
-                    }
-                    contentItem: Item {
-                        implicitHeight: 6
-                        Rectangle {
-                            width: overallBar.visualPosition * parent.width
-                            height: parent.height
-                            radius: 3
-                            color: Theme.accent
-                        }
-                    }
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: screen.currentName !== "" ? "▸ " + screen.currentName : (bridge.busy ? "● PROCESSING…" : "Idle — select folders and press Process All")
-                    color: Theme.text
-                    font.family: Theme.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1
-                    elide: Text.ElideMiddle
-                }
-            }
-        }
-
-        // -- Status footer ------------------------------------------------- //
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Text {
-                text: bridge.statusText !== "" ? "● " + bridge.statusText : ""
-                color: Theme.statusColorFor(bridge.statusColor)
-                font.family: Theme.mono
-                font.pixelSize: 10
-                font.letterSpacing: 1
             }
             Item {
                 Layout.fillWidth: true
             }
+            Text {
+                text: screen.doneCount + " / " + (screen.totalCount > 0 ? screen.totalCount : bridge.batchRows.length)
+                color: Theme.accent
+                font.family: Theme.mono
+                font.pixelSize: 11
+                font.letterSpacing: 1
+                Layout.alignment: Qt.AlignVCenter
+            }
+            ConsoleButton {
+                text: "Add Folder"
+                onClicked: folderDialog.open()
+            }
+            ConsoleButton {
+                text: "Output…"
+                onClicked: outputDialog.open()
+            }
+            ConsoleButton {
+                text: bridge.busy ? "Processing…" : "Process All"
+                primary: true
+                enabled: screen.folder !== "" && screen.outDir !== "" && bridge.modelReady && !bridge.busy
+                onClicked: bridge.batchProcess(screen.folder, screen.outDir)
+            }
         }
 
-        Item {
+        // -- Overall strip ------------------------------------------------- //
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            Text {
+                text: "OVERALL"
+                color: Theme.faint
+                font.family: Theme.mono
+                font.pixelSize: 10
+                font.letterSpacing: 1.3
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 3
+                radius: 1.5
+                color: Theme.block
+                Rectangle {
+                    width: parent.width * screen.progress
+                    height: parent.height
+                    radius: 1.5
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop {
+                            position: 0
+                            color: Theme.accentDeep
+                        }
+                        GradientStop {
+                            position: 1
+                            color: Theme.accent2
+                        }
+                    }
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: 500
+                        }
+                    }
+                }
+            }
+            Text {
+                text: Math.round(screen.progress * 100) + "%"
+                color: Theme.accent
+                font.family: Theme.mono
+                font.pixelSize: 10
+            }
+        }
+
+        // -- Rows ---------------------------------------------------------- //
+        ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            clip: true
+            spacing: 8
+            model: bridge.batchRows
+            delegate: Rectangle {
+                required property var modelData
+                required property int index
+                width: ListView.view ? ListView.view.width : 0
+                height: 64
+                radius: 3
+                color: Theme.kpRest
+                border.width: 1
+                border.color: Theme.line
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 16
+                    spacing: 14
+                    Hex {
+                        size: 22
+                        glyph: String(index + 1).padStart(2, "0")
+                        glyphSize: 9
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.name
+                            color: Theme.inkSoft
+                            font.family: Theme.body
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: modelData.status === "DONE" ? modelData.tokens + " TOK" : modelData.status.toLowerCase()
+                            color: Theme.faint
+                            font.family: Theme.mono
+                            font.pixelSize: 9
+                            font.letterSpacing: 0.5
+                        }
+                    }
+                    StatusChip {
+                        status: modelData.status
+                        meta: modelData.status === "DONE" ? modelData.tokens + " TOK" : ""
+                    }
+                }
+            }
         }
+    }
+
+    // Empty hint when nothing queued yet.
+    Text {
+        anchors.centerIn: parent
+        visible: bridge.batchRows.length === 0
+        text: "Add a folder of documents to begin"
+        color: Theme.faint
+        font.family: Theme.mono
+        font.pixelSize: 13
+        font.letterSpacing: 1
     }
 }
