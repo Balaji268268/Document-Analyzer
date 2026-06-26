@@ -8,10 +8,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from huggingface_hub import hf_hub_download
 
-from .logger import get_memory_usage_mb, log_debug, log_error, log_info, log_warning
+from .logger import get_memory_usage_mb, log_debug, log_error, log_info
 from .paths import app_data_dir
 
 # Supported summary types. Kept as module-level string constants (rather than
@@ -33,12 +34,90 @@ class ModelConfig:
     size_gb: float
 
 
+# Qwen3 4B Instruct (2507 refresh): a non-thinking instruct model that, in
+# side-by-side testing, produced markedly more structured and faithful
+# summaries than the previous Mistral 7B v0.2 default while being smaller
+# (2.5 GB vs 4.4 GB) and faster. GGUFs are sourced from Unsloth, since the
+# old TheBloke repos are no longer maintained.
 DEFAULT_MODEL = ModelConfig(
-    repo_id="TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
-    filename="mistral-7b-instruct-v0.2.Q4_K_M.gguf",
-    name="Mistral 7B Instruct",
-    size_gb=4.4,
+    repo_id="unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    filename="Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    name="Qwen3 4B Instruct 2507",
+    size_gb=2.5,
 )
+
+# Summarization tuning -------------------------------------------------------
+# Conservative chars-per-token estimate, used to keep prompts within the
+# context window without taking on a tokenizer dependency.
+_CHARS_PER_TOKEN = 3
+# Tokens reserved for everything in a request that isn't the document itself
+# (system prompt, instruction, chat-template overhead).
+_SCAFFOLD_TOKENS = 400
+# Floor on the per-chunk token budget, so a tiny n_ctx can't yield degenerate
+# one-character chunks.
+_MIN_CHUNK_TOKENS = 512
+
+_CLOSED_MESSAGE = "Summarizer has been closed; create a new instance."
+
+_SYSTEM_PROMPT = (
+    "You are a precise document-summarization assistant. Produce only the "
+    "requested summary, based solely on the provided document. Do not add a "
+    "preamble, a sign-off, or follow-up questions."
+)
+
+_SUMMARY_INSTRUCTIONS = {
+    SUMMARY_TYPE_BRIEF: (
+        "Summarize the document below in one concise paragraph (3-5 sentences), "
+        "focusing on the main topic, key findings, and conclusions."
+    ),
+    SUMMARY_TYPE_DETAILED: (
+        "Provide a detailed summary of the document below. Include the main topic "
+        "and purpose, the key points and arguments, important findings or "
+        "conclusions, and any significant methods or approaches mentioned."
+    ),
+    SUMMARY_TYPE_STRUCTURED: (
+        "Analyze the document below and provide a structured summary with these "
+        "sections, each on its own line:\n"
+        "**Title/Topic:** What is this document about?\n"
+        "**Purpose:** Why was this written?\n"
+        "**Key Points:** Main arguments or findings, as bullet points.\n"
+        "**Methods:** If applicable, how the work was conducted.\n"
+        "**Conclusions:** The main takeaways.\n"
+        "**Significance:** Why it matters."
+    ),
+}
+
+
+def _split_into_chunks(text: str, max_chars: int) -> list[str]:
+    """Split `text` into chunks no larger than `max_chars`.
+
+    Prefers paragraph boundaries (blank-line separated), keeping chunks
+    coherent. A single paragraph longer than `max_chars` is hard-split as a
+    last resort. Pure function (no model state) so it can be unit-tested
+    directly.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+    for para in text.split("\n\n"):
+        if len(para) > max_chars:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(para[i : i + max_chars] for i in range(0, len(para), max_chars))
+            continue
+        candidate = f"{current}\n\n{para}" if current else para
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = para
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def get_models_directory() -> Path:
@@ -56,20 +135,20 @@ def get_model_path(model_config: ModelConfig = DEFAULT_MODEL) -> Path:
     return get_models_directory() / model_config.filename
 
 
-def _build_progress_tqdm(callback: Callable[[float, str], None]):
+def _build_progress_tqdm(callback: Callable[[float, str], None]) -> type[Any]:
     """Build a tqdm subclass that fires `callback` on each whole-MB step.
 
     huggingface_hub instantiates this for `hf_hub_download`. tqdm calls
-    `update()` once per HTTP chunk (~thousands over a 4.4 GB download); we
+    `update()` once per HTTP chunk (~thousands over a multi-GB download); we
     coalesce to one callback per integer megabyte so the GUI doesn't burn
     Tk main-loop wakeups on no-op text changes.
     """
-    from tqdm.auto import tqdm as _BaseTqdm
+    from tqdm.auto import tqdm as _BaseTqdm  # noqa: N812
 
-    class _ProgressTqdm(_BaseTqdm):
+    class _ProgressTqdm(_BaseTqdm):  # type: ignore[misc]
         _last_reported_mb = -1
 
-        def update(self, n: int = 1):
+        def update(self, n: int = 1) -> Any:
             ret = super().update(n)
             try:
                 if not self.total or self.total <= 0:
@@ -154,14 +233,24 @@ def download_model(
 class Summarizer:
     """Handles text summarization using the local LLM."""
 
-    def __init__(self, model_path: Path, n_ctx: int = 8192, n_threads: int | None = None):
+    def __init__(
+        self,
+        model_path: Path,
+        n_ctx: int = 8192,
+        n_threads: int | None = None,
+        n_gpu_layers: int = 0,
+    ):
         """Initialize the summarizer with a model.
 
         Args:
             model_path: Path to the GGUF model file
-            n_ctx: Context window size (default 8192 for longer documents)
+            n_ctx: Context window size (default 8192). Documents longer than
+                this are summarized via map-reduce chunking.
             n_threads: Number of CPU threads. `None` = auto (half of available
                 cores). `0` means "let llama.cpp decide" and is passed through.
+            n_gpu_layers: Model layers to offload to the GPU. `0` (default)
+                keeps inference fully on the CPU for portability; `-1` offloads
+                all layers. Ignored by CPU-only llama-cpp builds.
         """
         from llama_cpp import Llama
 
@@ -169,11 +258,15 @@ class Summarizer:
         cpu_count = os.cpu_count() or 8
         default_threads = max(4, cpu_count // 2)
         self.n_threads = default_threads if n_threads is None else n_threads
+        self.n_gpu_layers = n_gpu_layers
 
         log_info("Initializing Summarizer")
         log_info(f"Model path: {model_path}")
         log_info(f"Context window: {n_ctx} tokens")
         log_info(f"CPU threads: {self.n_threads} of {cpu_count} available")
+        log_info(
+            f"GPU layers: {n_gpu_layers} ({'GPU offload enabled' if n_gpu_layers else 'CPU only'})"
+        )
         log_debug(f"Memory before loading: {get_memory_usage_mb()} MB")
 
         start_time = time.time()
@@ -183,6 +276,7 @@ class Summarizer:
             n_ctx=n_ctx,
             n_threads=self.n_threads,
             n_threads_batch=self.n_threads,
+            n_gpu_layers=n_gpu_layers,
             verbose=False,
         )
 
@@ -198,6 +292,11 @@ class Summarizer:
     ) -> str:
         """Generate a summary of the given text.
 
+        Documents that fit the context window are summarized in a single pass.
+        Longer documents are handled with a map-reduce strategy: the text is
+        split into context-sized chunks, each is summarized, and the partial
+        summaries are synthesized into one — so no content is silently dropped.
+
         Args:
             text: The text to summarize
             summary_type: one of `SUMMARY_TYPES`. Unknown values fall back to
@@ -208,81 +307,91 @@ class Summarizer:
             The generated summary
         """
         if self.llm is None:
-            raise RuntimeError("Summarizer has been closed; create a new instance.")
+            raise RuntimeError(_CLOSED_MESSAGE)
 
-        original_length = len(text)
-        log_info(f"Starting summarization: type={summary_type}, input_chars={original_length}")
-        log_debug(f"Max tokens for response: {max_tokens}")
+        text = text.strip()
+        log_info(f"Starting summarization: type={summary_type}, input_chars={len(text)}")
 
-        # ~3 chars per token (conservative); reserve ~1500 tokens for prompt
-        # scaffolding and the response itself.
-        max_input_tokens = self.n_ctx - 1500
-        max_input_chars = max_input_tokens * 3
-        if len(text) > max_input_chars:
-            text = text[:max_input_chars] + "\n\n[Document truncated due to length...]"
-            log_warning(f"Text truncated from {original_length} to {max_input_chars} chars")
+        budget_tokens = max(self.n_ctx - max_tokens - _SCAFFOLD_TOKENS, _MIN_CHUNK_TOKENS)
+        budget_chars = budget_tokens * _CHARS_PER_TOKEN
 
-        prompts = {
-            SUMMARY_TYPE_BRIEF: """Summarize the following document in one concise paragraph (3-5 sentences).
-Focus on the main topic, key findings, and conclusions.
+        if len(text) <= budget_chars:
+            start_time = time.time()
+            summary = self._summarize_once(text, summary_type, max_tokens)
+            self._log_speed(summary, time.time() - start_time)
+            return summary
 
-Document:
-{text}
-
-Summary:""",
-            SUMMARY_TYPE_DETAILED: """Provide a detailed summary of the following document. Include:
-- Main topic and purpose
-- Key points and arguments
-- Important findings or conclusions
-- Any significant methods or approaches mentioned
-
-Document:
-{text}
-
-Detailed Summary:""",
-            SUMMARY_TYPE_STRUCTURED: """Analyze the following document and provide a structured summary with these sections:
-
-**Title/Topic:** (What is this document about?)
-**Purpose:** (Why was this written?)
-**Key Points:** (Main arguments or findings, as bullet points)
-**Methods:** (If applicable, how was the research/work conducted?)
-**Conclusions:** (What are the main takeaways?)
-**Significance:** (Why does this matter?)
-
-Document:
-{text}
-
-Structured Summary:""",
-        }
-
-        prompt = prompts.get(summary_type, prompts[SUMMARY_TYPE_DETAILED]).format(text=text)
-        prompt_tokens_estimate = len(prompt) // 3
-        log_debug(f"Prompt size: {len(prompt)} chars (~{prompt_tokens_estimate} tokens)")
-
-        log_info("Generating summary (LLM inference starting)...")
+        # Document exceeds the context budget: map-reduce.
+        chunks = _split_into_chunks(text, budget_chars)
+        log_info(f"Document exceeds context budget; summarizing in {len(chunks)} chunks")
         start_time = time.time()
 
-        response = self.llm(
-            prompt,
+        partials = []
+        for i, chunk in enumerate(chunks, 1):
+            log_info(f"Summarizing chunk {i}/{len(chunks)} ({len(chunk)} chars)")
+            partials.append(self._summarize_once(chunk, summary_type, max_tokens))
+        combined = "\n\n".join(partials)
+
+        # Reduce. If the combined partials still overflow (a very long
+        # document with many chunks), recurse — each pass strictly shrinks the
+        # text, so this terminates.
+        if len(combined) > budget_chars:
+            log_info("Combined section summaries still exceed budget; reducing again")
+            return self.summarize(combined, summary_type, max_tokens)
+
+        summary = self._synthesize(combined, summary_type, max_tokens)
+        self._log_speed(summary, time.time() - start_time)
+        return summary
+
+    def _summarize_once(self, text: str, summary_type: str, max_tokens: int) -> str:
+        """Summarize text that fits within the context window in one call."""
+        instruction = _SUMMARY_INSTRUCTIONS.get(
+            summary_type, _SUMMARY_INSTRUCTIONS[SUMMARY_TYPE_DETAILED]
+        )
+        return self._chat(f"{instruction}\n\nDocument:\n{text}", max_tokens)
+
+    def _synthesize(self, partials_text: str, summary_type: str, max_tokens: int) -> str:
+        """Combine per-chunk summaries into one coherent summary."""
+        instruction = _SUMMARY_INSTRUCTIONS.get(
+            summary_type, _SUMMARY_INSTRUCTIONS[SUMMARY_TYPE_DETAILED]
+        )
+        prompt = (
+            "Below are summaries of consecutive sections of a single document. "
+            "Combine them into one coherent summary, removing redundancy.\n\n"
+            f"{instruction}\n\nSection summaries:\n{partials_text}"
+        )
+        return self._chat(prompt, max_tokens)
+
+    def _chat(self, user_content: str, max_tokens: int) -> str:
+        """Run one chat completion, applying the model's own chat template.
+
+        Using ``create_chat_completion`` (rather than a raw prompt string) lets
+        llama.cpp wrap the message in whatever instruction format the loaded
+        model expects, so swapping models doesn't require hand-editing prompts.
+        """
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError(_CLOSED_MESSAGE)
+        response = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
             max_tokens=max_tokens,
             temperature=0.3,
             top_p=0.9,
-            stop=["Document:", "\n\n\n"],
-            echo=False,
         )
+        content = response["choices"][0]["message"].get("content") or ""
+        return str(content).strip()
 
-        elapsed = time.time() - start_time
-        summary = response["choices"][0]["text"].strip()
-
-        output_tokens = response.get("usage", {}).get("completion_tokens", len(summary) // 4)
-        tokens_per_sec = output_tokens / elapsed if elapsed > 0 else 0
-
-        log_info(f"Summary generated in {elapsed:.2f}s")
-        log_info(f"Output: {len(summary)} chars, ~{output_tokens} tokens")
-        log_info(f"Speed: {tokens_per_sec:.1f} tokens/sec")
+    def _log_speed(self, summary: str, elapsed: float) -> None:
+        approx_tokens = max(len(summary) // 4, 1)
+        tokens_per_sec = approx_tokens / elapsed if elapsed > 0 else 0
+        log_info(
+            f"Summary generated in {elapsed:.2f}s "
+            f"(~{approx_tokens} tokens, {tokens_per_sec:.1f} tok/s)"
+        )
         log_debug(f"Memory usage: {get_memory_usage_mb()} MB")
-
-        return summary
 
     def close(self) -> None:
         """Release the underlying llama.cpp model.
@@ -298,5 +407,5 @@ Structured Summary:""",
     def __enter__(self) -> "Summarizer":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.close()
