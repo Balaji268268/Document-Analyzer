@@ -3,6 +3,7 @@ Model Manager Module
 Handles downloading, loading, and running the local LLM.
 """
 
+import json
 import os
 import time
 from collections.abc import Callable
@@ -12,8 +13,9 @@ from typing import Any
 
 from huggingface_hub import hf_hub_download
 
-from .logger import get_memory_usage_mb, log_debug, log_error, log_info
+from .logger import get_memory_usage_mb, log_debug, log_error, log_info, log_warning
 from .paths import app_data_dir
+from .provenance import SourceSpan, locate_quote, split_sentences
 
 # Supported summary types. Kept as module-level string constants (rather than
 # enum.StrEnum, which requires Python 3.11+) so callers can keep passing plain
@@ -118,6 +120,276 @@ def _split_into_chunks(text: str, max_chars: int) -> list[str]:
     if current:
         chunks.append(current)
     return chunks
+
+
+# Structured, source-grounded summaries -------------------------------------- #
+# These power the GUI's provenance feature: discrete points, each grounded in a
+# source sentence. The plain ``summarize() -> str`` path above is untouched (the
+# CLI depends on it); everything here is additive.
+
+# Reasoning/grounding is more reliable with a strict JSON contract and
+# near-deterministic sampling, so the structured path uses its own system
+# prompt, a low temperature, and a fixed seed (distinct from the prose path).
+_STRUCTURED_SYSTEM_PROMPT = (
+    "You are a precise document-summarization assistant. Output ONLY valid JSON "
+    "matching the requested shape, with no preamble or commentary. Ground every "
+    'point in the document: each "quote" must be a sentence copied verbatim from '
+    "the document that supports the point."
+)
+_STRUCTURED_SEED = 0
+_STRUCTURED_TEMPERATURE = 0.1
+# JSON output is denser than prose, so reserve more of the context window for
+# the response than the prose path's _SCAFFOLD_TOKENS does.
+_STRUCTURED_SCAFFOLD_TOKENS = 700
+_DETAILED_POINT_COUNT = 3
+# Structured-summary sections, in render order. CONCLUSIONS is a synthesis with
+# no single supporting sentence, so it carries no quote.
+_STRUCTURED_SECTIONS = ("PURPOSE", "METHOD", "RESULTS", "CONCLUSIONS")
+
+_DETAILED_JSON_INSTRUCTION = (
+    "Summarize the document as a JSON object of the form "
+    '{"lead": "<one-sentence overview>", "points": [{"text": "<key point>", '
+    '"quote": "<verbatim supporting sentence from the document>"}]}. '
+    f"Provide exactly {_DETAILED_POINT_COUNT} points, each with a verbatim quote."
+)
+_STRUCTURED_JSON_INSTRUCTION = (
+    "Summarize the document as a JSON object of the form "
+    '{"sections": {"PURPOSE": [{"text": "...", "quote": "<verbatim sentence>"}], '
+    '"METHOD": [...], "RESULTS": [...], "CONCLUSIONS": [{"text": "..."}]}}. '
+    "Every PURPOSE, METHOD, and RESULTS point must include a verbatim quote from "
+    "the document; CONCLUSIONS is a synthesis and needs no quote."
+)
+
+
+@dataclass(frozen=True)
+class SummaryPoint:
+    """One summary claim, optionally grounded in a source sentence."""
+
+    text: str
+    citation: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
+class StructuredSummary:
+    """A structured summary the GUI can render with per-point provenance.
+
+    - Brief: ``lead`` holds the single paragraph; ``points`` is empty.
+    - Detailed: ``lead`` overview plus grounded ``points``.
+    - Structured: ``sections`` keyed by ``_STRUCTURED_SECTIONS``.
+
+    ``text`` is the plain-text rendering, kept so the CLI and the Save path can
+    write a structured summary the same way they write a prose one.
+    """
+
+    summary_type: str
+    lead: str | None
+    points: list[SummaryPoint]
+    sections: dict[str, list[SummaryPoint]] | None
+    text: str
+
+
+def _split_into_chunks_with_offsets(text: str, max_chars: int) -> list[tuple[str, int]]:
+    """Like ``_split_into_chunks``, but each chunk carries its base offset.
+
+    Returns ``(chunk_text, base_offset)`` pairs where
+    ``text[base_offset : base_offset + len(chunk_text)] == chunk_text`` exactly,
+    so a quote located at a position within a chunk maps back to the full
+    document. Splits on sentence boundaries; a single sentence longer than
+    ``max_chars`` is hard-sliced.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return [(text, 0)]
+
+    sentences = split_sentences(text)
+    if not sentences:
+        return [(text[i : i + max_chars], i) for i in range(0, len(text), max_chars)]
+
+    chunks: list[tuple[str, int]] = []
+    chunk_start: int | None = None
+    chunk_end = 0
+    for sent_start, sent_end in sentences:
+        if sent_end - sent_start > max_chars:
+            if chunk_start is not None:
+                chunks.append((text[chunk_start:chunk_end], chunk_start))
+                chunk_start = None
+            for i in range(sent_start, sent_end, max_chars):
+                end = min(i + max_chars, sent_end)
+                chunks.append((text[i:end], i))
+            continue
+        if chunk_start is None:
+            chunk_start, chunk_end = sent_start, sent_end
+        elif sent_end - chunk_start <= max_chars:
+            chunk_end = sent_end
+        else:
+            chunks.append((text[chunk_start:chunk_end], chunk_start))
+            chunk_start, chunk_end = sent_start, sent_end
+    if chunk_start is not None:
+        chunks.append((text[chunk_start:chunk_end], chunk_start))
+    return chunks
+
+
+def _parse_structured_json(raw: str) -> dict[str, Any] | None:
+    """Parse a JSON object from a model response, tolerantly.
+
+    Tries a direct parse, then decodes the first ``{...}`` object even when the
+    model wraps it in prose (a common small-model failure mode), ignoring any
+    trailing text. Returns ``None`` if nothing parses to a JSON object — the
+    caller then degrades to a prose summary.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        start = raw.find("{")
+        if start == -1:
+            return None
+        try:
+            data, _ = json.JSONDecoder().raw_decode(raw, start)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_raw_points(value: Any) -> list[tuple[str, str]]:
+    """Coerce a parsed ``points`` array into ``(text, quote)`` pairs.
+
+    Defensive against a small local model's malformed entries: non-string or
+    empty ``text`` is dropped, and a non-string/``null`` ``quote`` is treated as
+    absent (so ``null`` is never searched as the literal string ``"None"``).
+    """
+    if not isinstance(value, list):
+        return []
+    points: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        quote = item.get("quote")
+        quote = quote.strip() if isinstance(quote, str) else ""
+        points.append((text.strip(), quote))
+    return points
+
+
+def _ground_points(
+    raw_points: list[tuple[str, str]],
+    text: str,
+    base: int,
+    sentences: list[tuple[int, int]],
+) -> list[SummaryPoint]:
+    """Attach a source citation to each point by locating its quote in ``text``.
+
+    Citations are shifted by ``base`` so their offsets index the full document
+    even when ``text`` is a chunk. An unlocatable quote yields no citation.
+    """
+    points: list[SummaryPoint] = []
+    for point_text, quote in raw_points:
+        citation = locate_quote(quote, text, sentences) if quote else None
+        if citation is not None and base:
+            citation = SourceSpan(
+                citation.start + base, citation.end + base, citation.quote, citation.score
+            )
+        points.append(SummaryPoint(text=point_text, citation=citation))
+    return points
+
+
+def _build_structured(
+    parsed: dict[str, Any], summary_type: str, text: str, base: int
+) -> StructuredSummary:
+    """Build a ``StructuredSummary`` from one parsed JSON response over ``text``.
+
+    Points (and each section) are capped to ``_DETAILED_POINT_COUNT`` so a
+    single pass and a map-reduce pass agree on the per-section bound.
+    """
+    sentences = split_sentences(text)
+    if summary_type == SUMMARY_TYPE_DETAILED:
+        lead = str(parsed.get("lead", "")).strip() or None
+        points = _ground_points(_read_raw_points(parsed.get("points")), text, base, sentences)[
+            :_DETAILED_POINT_COUNT
+        ]
+        return _make_structured(SUMMARY_TYPE_DETAILED, lead, points, None)
+    raw_sections = parsed.get("sections")
+    raw_sections = raw_sections if isinstance(raw_sections, dict) else {}
+    sections = {
+        name: _ground_points(_read_raw_points(raw_sections.get(name)), text, base, sentences)[
+            :_DETAILED_POINT_COUNT
+        ]
+        for name in _STRUCTURED_SECTIONS
+    }
+    return _make_structured(SUMMARY_TYPE_STRUCTURED, None, [], sections)
+
+
+def _render_structured(
+    summary_type: str,
+    lead: str | None,
+    points: list[SummaryPoint],
+    sections: dict[str, list[SummaryPoint]] | None,
+) -> str:
+    """Render a structured summary as plain text (for the CLI / Save path)."""
+    lines: list[str] = []
+    if lead:
+        lines.append(lead)
+    if summary_type == SUMMARY_TYPE_STRUCTURED and sections:
+        for name in _STRUCTURED_SECTIONS:
+            section_points = sections.get(name) or []
+            if not section_points:
+                continue
+            if lines:
+                lines.append("")
+            lines.append(f"{name.title()}:")
+            lines.extend(f"- {point.text}" for point in section_points)
+    else:
+        if points and lines:
+            lines.append("")
+        lines.extend(f"- {point.text}" for point in points)
+    return "\n".join(lines).strip()
+
+
+def _make_structured(
+    summary_type: str,
+    lead: str | None,
+    points: list[SummaryPoint],
+    sections: dict[str, list[SummaryPoint]] | None,
+) -> StructuredSummary:
+    """Assemble a ``StructuredSummary``, rendering its ``text`` form once.
+
+    Keeps the plain-text ``text`` field in lockstep with the structured fields
+    at every build site, so the two can't drift apart.
+    """
+    return StructuredSummary(
+        summary_type,
+        lead,
+        points,
+        sections,
+        _render_structured(summary_type, lead, points, sections),
+    )
+
+
+def _select_round_robin(groups: list[list[SummaryPoint]], limit: int) -> list[SummaryPoint]:
+    """Pick up to ``limit`` points, drawing across ``groups`` (chunks) in turn.
+
+    Round-robin (first of each group, then second, ...) so a long document's
+    summary is represented by all its chunks rather than only the earliest.
+    """
+    selected: list[SummaryPoint] = []
+    depth = max((len(group) for group in groups), default=0)
+    for i in range(depth):
+        for group in groups:
+            if i < len(group):
+                selected.append(group[i])
+                if len(selected) >= limit:
+                    return selected
+    return selected
+
+
+def _is_empty_structured(summary: StructuredSummary) -> bool:
+    """True when a built summary has no usable content (triggers fallback)."""
+    if summary.summary_type == SUMMARY_TYPE_STRUCTURED:
+        return not (summary.sections and any(summary.sections.values()))
+    return not summary.points
 
 
 def get_models_directory() -> Path:
@@ -342,6 +614,131 @@ class Summarizer:
         summary = self._synthesize(combined, summary_type, max_tokens)
         self._log_speed(summary, time.time() - start_time)
         return summary
+
+    def summarize_structured(
+        self,
+        text: str,
+        summary_type: str = SUMMARY_TYPE_DETAILED,
+        max_tokens: int = 1024,
+    ) -> StructuredSummary:
+        """Summarize into discrete, source-grounded points for the GUI.
+
+        Each point carries a ``SourceSpan`` citation when its model-emitted
+        quote can be re-located in the source (offsets into the full document),
+        otherwise ``None`` — citations are never fabricated. Brief is a single
+        plain paragraph (no provenance). Any JSON-parse failure degrades to the
+        plain ``summarize`` output, so this never hard-fails. ``summarize`` (the
+        ``-> str`` API the CLI uses) is unchanged.
+        """
+        if self.llm is None:
+            raise RuntimeError(_CLOSED_MESSAGE)
+
+        # NB: do not strip — citation offsets must index the caller's exact text
+        # (extracted documents commonly start with whitespace). split_sentences
+        # already ignores leading/trailing whitespace for grounding.
+        if summary_type == SUMMARY_TYPE_BRIEF:
+            lead = self.summarize(text, SUMMARY_TYPE_BRIEF, max_tokens)
+            return StructuredSummary(SUMMARY_TYPE_BRIEF, lead or None, [], None, lead)
+
+        if summary_type not in (SUMMARY_TYPE_DETAILED, SUMMARY_TYPE_STRUCTURED):
+            summary_type = SUMMARY_TYPE_DETAILED
+
+        log_info(f"Starting structured summarization: type={summary_type}, input_chars={len(text)}")
+        try:
+            result = self._summarize_structured(text, summary_type, max_tokens)
+        except Exception as exc:
+            log_warning(f"Structured summarization failed ({exc!s}); falling back to prose")
+            result = None
+        if result is None:
+            return self._fallback_structured(text, summary_type, max_tokens)
+        return result
+
+    def _summarize_structured(
+        self, text: str, summary_type: str, max_tokens: int
+    ) -> StructuredSummary | None:
+        """Run the structured path; ``None`` signals the caller to fall back."""
+        budget_chars = (
+            max(self.n_ctx - max_tokens - _STRUCTURED_SCAFFOLD_TOKENS, _MIN_CHUNK_TOKENS)
+            * _CHARS_PER_TOKEN
+        )
+        instruction = (
+            _DETAILED_JSON_INSTRUCTION
+            if summary_type == SUMMARY_TYPE_DETAILED
+            else _STRUCTURED_JSON_INSTRUCTION
+        )
+
+        if len(text) <= budget_chars:
+            parsed = _parse_structured_json(
+                self._chat_json(f"{instruction}\n\nDocument:\n{text}", max_tokens)
+            )
+            if parsed is None:
+                return None
+            built = _build_structured(parsed, summary_type, text, 0)
+            return None if _is_empty_structured(built) else built
+
+        # Map each chunk (citations already at global offsets), keeping per-chunk
+        # groups. Reduce by drawing across chunks round-robin, so a long document
+        # draws from its whole body rather than only the first chunk.
+        lead: str | None = None
+        detailed_groups: list[list[SummaryPoint]] = []
+        section_groups: dict[str, list[list[SummaryPoint]]] = {
+            name: [] for name in _STRUCTURED_SECTIONS
+        }
+        for chunk_text, base in _split_into_chunks_with_offsets(text, budget_chars):
+            parsed = _parse_structured_json(
+                self._chat_json(f"{instruction}\n\nDocument:\n{chunk_text}", max_tokens)
+            )
+            if parsed is None:
+                continue
+            partial = _build_structured(parsed, summary_type, chunk_text, base)
+            if lead is None and partial.lead:
+                lead = partial.lead
+            if partial.points:
+                detailed_groups.append(partial.points)
+            if partial.sections:
+                for name in _STRUCTURED_SECTIONS:
+                    section = partial.sections.get(name)
+                    if section:
+                        section_groups[name].append(section)
+
+        if summary_type == SUMMARY_TYPE_DETAILED:
+            points = _select_round_robin(detailed_groups, _DETAILED_POINT_COUNT)
+            if not points:
+                return None
+            return _make_structured(SUMMARY_TYPE_DETAILED, lead, points, None)
+        sections = {
+            name: _select_round_robin(groups, _DETAILED_POINT_COUNT)
+            for name, groups in section_groups.items()
+        }
+        if not any(sections.values()):
+            return None
+        return _make_structured(SUMMARY_TYPE_STRUCTURED, None, [], sections)
+
+    def _chat_json(self, user_content: str, max_tokens: int) -> str:
+        """One chat completion constrained to a JSON object, low-temperature."""
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError(_CLOSED_MESSAGE)
+        response = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": _STRUCTURED_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=max_tokens,
+            temperature=_STRUCTURED_TEMPERATURE,
+            top_p=0.9,
+            seed=_STRUCTURED_SEED,
+            response_format={"type": "json_object"},
+        )
+        content = response["choices"][0]["message"].get("content") or ""
+        return str(content).strip()
+
+    def _fallback_structured(
+        self, text: str, summary_type: str, max_tokens: int
+    ) -> StructuredSummary:
+        """Degrade to a plain prose summary wrapped as a ``StructuredSummary``."""
+        summary = self.summarize(text, summary_type, max_tokens)
+        return StructuredSummary(summary_type, summary or None, [], None, summary)
 
     def _summarize_once(self, text: str, summary_type: str, max_tokens: int) -> str:
         """Summarize text that fits within the context window in one call."""

@@ -50,7 +50,7 @@ def test_save_then_load_roundtrip() -> None:
 def test_save_writes_expected_json() -> None:
     save_settings(Settings(n_threads=4, use_gpu=False))
     data = json.loads(settings_path().read_text(encoding="utf-8"))
-    assert data == {"n_threads": 4, "use_gpu": False}
+    assert data == {"n_threads": 4, "use_gpu": False, "appearance": "System"}
 
 
 def test_corrupt_file_falls_back_to_defaults() -> None:

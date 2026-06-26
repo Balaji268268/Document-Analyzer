@@ -1,4 +1,4 @@
-"""Persisted user settings (CPU threads, GPU offload).
+"""Persisted user settings (CPU threads, GPU offload, appearance).
 
 A tiny JSON file under the app-data ``config`` dir. Everything is
 optional and tolerant: a missing or corrupt file yields defaults rather
@@ -19,6 +19,11 @@ from .paths import app_data_dir
 # llama.cpp uses -1 to mean "offload every layer to the GPU".
 _ALL_GPU_LAYERS = -1
 
+# Appearance modes accepted by the GUI (mirrors CustomTkinter / the Config
+# screen's segmented control). Anything else falls back to "System".
+_VALID_APPEARANCES = ("System", "Light", "Dark")
+_DEFAULT_APPEARANCE = "System"
+
 
 def settings_path() -> Path:
     """Path to the settings JSON file (its parent ``config`` dir is created)."""
@@ -34,10 +39,13 @@ class Settings:
             the available cores, decided in ``Summarizer``).
         use_gpu: Offload all model layers to the GPU when ``True``. Harmless
             on CPU-only llama-cpp builds — the flag is simply ignored there.
+        appearance: GUI theme, one of ``System``/``Light``/``Dark``. Persisted
+            so the chosen theme survives a restart.
     """
 
     n_threads: int | None = None
     use_gpu: bool = False
+    appearance: str = _DEFAULT_APPEARANCE
 
     @property
     def n_gpu_layers(self) -> int:
@@ -67,13 +75,25 @@ def load_settings() -> Settings:
     if not (isinstance(threads, int) and not isinstance(threads, bool) and threads >= 1):
         threads = None
 
-    return Settings(n_threads=threads, use_gpu=bool(data.get("use_gpu", False)))
+    appearance = data.get("appearance")
+    if appearance not in _VALID_APPEARANCES:
+        appearance = _DEFAULT_APPEARANCE
+
+    return Settings(
+        n_threads=threads,
+        use_gpu=bool(data.get("use_gpu", False)),
+        appearance=appearance,
+    )
 
 
 def save_settings(settings: Settings) -> None:
     """Persist settings atomically. I/O failures are logged, not raised."""
     path = settings_path()
-    payload = {"n_threads": settings.n_threads, "use_gpu": settings.use_gpu}
+    payload = {
+        "n_threads": settings.n_threads,
+        "use_gpu": settings.use_gpu,
+        "appearance": settings.appearance,
+    }
     try:
         # Write to a sibling temp file then atomically replace, so a crash
         # mid-write can't leave a half-written (corrupt) settings file.

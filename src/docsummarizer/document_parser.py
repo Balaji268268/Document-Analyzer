@@ -149,6 +149,80 @@ def find_documents(path: Path) -> list[Path]:
     ]
 
 
+class DocumentStats(TypedDict):
+    """Rich metadata for the Summary/Extract header strip.
+
+    ``pages`` is only meaningful for PDFs (``None`` otherwise); ``encoding`` is
+    only detected for plain-text formats (``None`` otherwise). ``words``/``chars``
+    are derived from the extracted text; ``parser`` names the engine used.
+    """
+
+    name: str
+    pages: int | None
+    words: int
+    chars: int
+    encoding: str | None
+    parser: str
+
+
+# Which extraction engine handles each extension — surfaced in the header strip.
+_PARSER_LABELS: dict[str, str] = {
+    ".pdf": "pypdf",
+    ".docx": "python-docx",
+    ".rtf": "striprtf",
+    ".txt": "chardet",
+    ".md": "chardet",
+    ".text": "chardet",
+}
+
+# Extensions whose encoding we can meaningfully detect (chardet on raw bytes).
+_TEXT_EXTENSIONS = frozenset({".txt", ".md", ".text"})
+
+
+def _pdf_page_count(file_path: str) -> int | None:
+    """Page count for a PDF, or ``None`` if it can't be read.
+
+    A second, lightweight open (the extractor discards the page count); never
+    raises, so a corrupt/missing PDF just yields ``None`` pages in the strip.
+    """
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(file_path).pages)
+    except Exception:  # best-effort metadata; a bad PDF just yields None pages
+        return None
+
+
+def _detect_encoding(file_path: str) -> str | None:
+    """Detected text encoding for a plain-text file, or ``None`` on read error."""
+    try:
+        raw = Path(file_path).read_bytes()
+    except OSError:
+        return None
+    return chardet.detect(raw).get("encoding") or None
+
+
+def analyze_document(file_path: str, text: str | None = None) -> DocumentStats:
+    """Gather header-strip metadata for a document.
+
+    ``words``/``chars`` come from ``text`` when supplied (the caller usually
+    already extracted it), otherwise the text is extracted here. ``pages`` is
+    PDF-only and ``encoding`` is plain-text-only; both degrade to ``None``.
+    """
+    path = Path(file_path)
+    ext = path.suffix.lower()
+    if text is None:
+        text, _ = extract_text(file_path)
+    return {
+        "name": path.name,
+        "pages": _pdf_page_count(file_path) if ext == ".pdf" else None,
+        "words": len(text.split()),
+        "chars": len(text),
+        "encoding": _detect_encoding(file_path) if ext in _TEXT_EXTENSIONS else None,
+        "parser": _PARSER_LABELS.get(ext, "unknown"),
+    }
+
+
 # Dialog filter list, derived from SUPPORTED_EXTENSION_SET so it can't drift.
 SUPPORTED_EXTENSIONS = [
     ("All Supported", "*.pdf *.docx *.rtf *.txt *.md"),
