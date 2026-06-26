@@ -581,6 +581,22 @@ class Summarizer:
         load_time = time.time() - start_time
         log_info(f"Model loaded successfully in {load_time:.2f}s")
         log_debug(f"Memory after loading: {get_memory_usage_mb()} MB")
+        # Set during summarize(); read per-token to interrupt generation on Stop.
+        self._cancel_check: Callable[[], bool] | None = None
+
+    def _stopping_criteria(self) -> object | None:
+        """A llama-cpp stopping criteria that aborts generation when the active
+        cancel-check fires — so Stop interrupts the current chunk, not just the
+        gaps between chunks. ``None`` when there is nothing to cancel."""
+        check = self._cancel_check
+        if check is None:
+            return None
+        try:
+            from llama_cpp import StoppingCriteriaList
+        except Exception:
+            return None
+        criteria: object = StoppingCriteriaList([lambda input_ids, logits: bool(check())])
+        return criteria
 
     def summarize(
         self,
@@ -608,6 +624,7 @@ class Summarizer:
         if self.llm is None:
             raise RuntimeError(_CLOSED_MESSAGE)
 
+        self._cancel_check = should_cancel
         text = text.strip()
         log_info(f"Starting summarization: type={summary_type}, input_chars={len(text)}")
 
@@ -692,6 +709,7 @@ class Summarizer:
         should_cancel: Callable[[], bool] | None = None,
     ) -> StructuredSummary | None:
         """Run the structured path; ``None`` signals the caller to fall back."""
+        self._cancel_check = should_cancel
         budget_chars = (
             max(self.n_ctx - max_tokens - _STRUCTURED_SCAFFOLD_TOKENS, _MIN_CHUNK_TOKENS)
             * _CHARS_PER_TOKEN
@@ -765,7 +783,9 @@ class Summarizer:
             top_p=0.9,
             seed=_STRUCTURED_SEED,
             response_format={"type": "json_object"},
+            stopping_criteria=self._stopping_criteria(),
         )
+        _raise_if_cancelled(self._cancel_check)
         content = response["choices"][0]["message"].get("content") or ""
         return str(content).strip()
 
@@ -813,7 +833,9 @@ class Summarizer:
             max_tokens=max_tokens,
             temperature=0.3,
             top_p=0.9,
+            stopping_criteria=self._stopping_criteria(),
         )
+        _raise_if_cancelled(self._cancel_check)
         content = response["choices"][0]["message"].get("content") or ""
         return str(content).strip()
 
