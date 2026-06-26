@@ -19,9 +19,10 @@ from .model_manager import (
     get_model_path,
     is_model_downloaded,
 )
+from .settings import Settings, load_settings
 
 
-def print_progress(percent: float, message: str):
+def print_progress(percent: float, message: str) -> None:
     """Print progress to console."""
     bar_length = 40
     filled = int(bar_length * percent / 100)
@@ -97,7 +98,8 @@ def summarize_file(
     return True
 
 
-def main():
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser (split out so it can be unit-tested)."""
     parser = argparse.ArgumentParser(
         description="DocSummarizer - Offline Document Summarization",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -107,6 +109,7 @@ Examples:
   %(prog)s document.pdf -t structured       Use structured summary format
   %(prog)s ./documents/ -o ./summaries/     Batch process a folder
   %(prog)s report.docx -o summary.txt       Save to specific file
+  %(prog)s document.pdf --gpu               Offload to the GPU for this run
         """,
     )
 
@@ -115,7 +118,6 @@ Examples:
         nargs="?",
         help="Input file or directory to process",
     )
-
     parser.add_argument(
         "-t",
         "--type",
@@ -123,15 +125,38 @@ Examples:
         default=SUMMARY_TYPE_DETAILED,
         help=f"Summary type (default: {SUMMARY_TYPE_DETAILED})",
     )
-
     parser.add_argument(
         "-o", "--output", help="Output file or directory (default: print to console)"
     )
-
+    parser.add_argument(
+        "--gpu",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Offload the model to the GPU (--no-gpu forces CPU). "
+        "Overrides the saved setting for this run.",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help="CPU threads for inference (overrides the saved setting).",
+    )
     parser.add_argument(
         "--download-only", action="store_true", help="Only download the model, do not process files"
     )
+    return parser
 
+
+def _resolve_runtime(args: argparse.Namespace, settings: Settings) -> tuple[int | None, int]:
+    """Resolve ``(n_threads, n_gpu_layers)`` — CLI flags override saved settings."""
+    use_gpu = settings.use_gpu if args.gpu is None else args.gpu
+    n_threads = settings.n_threads if args.threads is None else args.threads
+    return n_threads, (-1 if use_gpu else 0)
+
+
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
 
     if not ensure_model():
@@ -154,9 +179,11 @@ Examples:
         print(f"Error: No supported documents found in: {args.input}")
         sys.exit(1)
 
-    print("Loading model...")
+    n_threads, n_gpu_layers = _resolve_runtime(args, load_settings())
+
+    print(f"Loading model ({'GPU' if n_gpu_layers else 'CPU'})...")
     try:
-        summarizer = Summarizer(get_model_path())
+        summarizer = Summarizer(get_model_path(), n_threads=n_threads, n_gpu_layers=n_gpu_layers)
     except Exception as e:
         print(f"Error loading model: {e}")
         sys.exit(1)

@@ -31,6 +31,7 @@ from .model_manager import (
     get_model_path,
     is_model_downloaded,
 )
+from .settings import Settings, load_settings, save_settings
 
 # Appearance settings
 ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
@@ -46,7 +47,7 @@ STATUS_WARN = "orange"
 class LoadingDialog(ctk.CTkToplevel):
     """A small loading dialog that appears during long operations."""
 
-    def __init__(self, parent, message: str = "Loading..."):
+    def __init__(self, parent: Any, message: str = "Loading...") -> None:
         super().__init__(parent)
 
         self.title("")
@@ -76,12 +77,12 @@ class LoadingDialog(ctk.CTkToplevel):
         self.progress.configure(mode="indeterminate")
         self.progress.start()
 
-    def update_message(self, message: str):
+    def update_message(self, message: str) -> None:
         """Update the loading message."""
         self.message_label.configure(text=message)
         self.update()
 
-    def close(self):
+    def close(self) -> None:
         """Close the loading dialog."""
         self.progress.stop()
         self.grab_release()
@@ -91,7 +92,7 @@ class LoadingDialog(ctk.CTkToplevel):
 class DocSummarizerApp(ctk.CTk):
     """Main application window."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         log_startup()
@@ -100,6 +101,10 @@ class DocSummarizerApp(ctk.CTk):
         self.title("DocSummarizer - Offline Document Summarization")
         self.geometry("900x700")
         self.minsize(700, 500)
+
+        # Persisted user preferences (CPU threads, GPU offload). Loaded up
+        # front so widget construction can seed its defaults from them.
+        self._settings = load_settings()
 
         # `_summarizer` is touched by worker threads (load, reload, download)
         # and the main UI thread (button state, summarize action). All access
@@ -150,11 +155,23 @@ class DocSummarizerApp(ctk.CTk):
         if old is not None and old is not summarizer:
             old.close()
 
+    def _persist_settings(self) -> None:
+        """Save the current thread/GPU selections so they survive a restart."""
+        self._settings = Settings(
+            n_threads=int(self.threads_var.get()),
+            use_gpu=bool(self.gpu_var.get()),
+        )
+        save_settings(self._settings)
+
+    def _gpu_layers(self) -> int:
+        """llama.cpp n_gpu_layers implied by the GPU switch (-1 = all, 0 = none)."""
+        return -1 if bool(self.gpu_var.get()) else 0
+
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         """Clean shutdown when window is closed."""
         if self._is_closing:
             return
@@ -182,7 +199,7 @@ class DocSummarizerApp(ctk.CTk):
     # Widget construction
     # ------------------------------------------------------------------ #
 
-    def _create_widgets(self):
+    def _create_widgets(self) -> None:
         """Create all GUI widgets."""
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -241,7 +258,10 @@ class DocSummarizerApp(ctk.CTk):
         self.extracted_textbox.configure(state="disabled")
 
         self._create_settings_tab()
+        self._create_controls_bar()
 
+    def _create_controls_bar(self) -> None:
+        """Create the bottom controls bar (summary type, progress, actions)."""
         self.controls_frame = ctk.CTkFrame(self)
         self.controls_frame.grid(row=3, column=0, padx=10, pady=(5, 10), sticky="ew")
         self.controls_frame.grid_columnconfigure(1, weight=1)
@@ -281,7 +301,7 @@ class DocSummarizerApp(ctk.CTk):
         )
         self.save_btn.grid(row=0, column=4, padx=(5, 10), pady=10)
 
-    def _create_settings_tab(self):
+    def _create_settings_tab(self) -> None:
         """Create the settings tab content."""
         self.tab_settings.grid_columnconfigure(0, weight=1)
 
@@ -309,8 +329,9 @@ class DocSummarizerApp(ctk.CTk):
         performance_label.grid(row=3, column=0, padx=10, pady=(20, 5), sticky="w")
 
         cpu_count = os.cpu_count() or 8
-        default_threads = max(4, cpu_count // 2)
-        self.threads_var = ctk.IntVar(value=default_threads)
+        initial_threads = self._settings.n_threads or max(4, cpu_count // 2)
+        initial_threads = max(2, min(initial_threads, cpu_count))
+        self.threads_var = ctk.IntVar(value=initial_threads)
 
         threads_frame = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
         threads_frame.grid(row=4, column=0, padx=10, pady=5, sticky="w")
@@ -330,7 +351,7 @@ class DocSummarizerApp(ctk.CTk):
         self.threads_slider.grid(row=0, column=1, padx=5)
 
         self.threads_value_label = ctk.CTkLabel(
-            threads_frame, text=f"{default_threads} / {cpu_count}", width=60
+            threads_frame, text=f"{initial_threads} / {cpu_count}", width=60
         )
         self.threads_value_label.grid(row=0, column=2, padx=5)
 
@@ -342,6 +363,27 @@ class DocSummarizerApp(ctk.CTk):
         )
         threads_hint.grid(row=5, column=0, padx=10, pady=(0, 5), sticky="w")
 
+        self.gpu_var = ctk.BooleanVar(value=self._settings.use_gpu)
+        gpu_frame = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
+        gpu_frame.grid(row=6, column=0, padx=10, pady=5, sticky="w")
+
+        gpu_label = ctk.CTkLabel(gpu_frame, text="GPU Acceleration:")
+        gpu_label.grid(row=0, column=0, padx=(0, 10))
+
+        self.gpu_switch = ctk.CTkSwitch(
+            gpu_frame, text="", variable=self.gpu_var, command=self._on_gpu_changed
+        )
+        self.gpu_switch.grid(row=0, column=1, padx=5)
+
+        gpu_hint = ctk.CTkLabel(
+            self.tab_settings,
+            text="Offload the model to the GPU — much faster, needs a CUDA build. "
+            "Requires model reload.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        )
+        gpu_hint.grid(row=7, column=0, padx=10, pady=(0, 5), sticky="w")
+
         self.reload_model_btn = ctk.CTkButton(
             self.tab_settings,
             text="Reload Model",
@@ -349,12 +391,12 @@ class DocSummarizerApp(ctk.CTk):
             width=150,
             state="disabled",
         )
-        self.reload_model_btn.grid(row=6, column=0, padx=10, pady=5, sticky="w")
+        self.reload_model_btn.grid(row=8, column=0, padx=10, pady=5, sticky="w")
 
         appearance_label = ctk.CTkLabel(
             self.tab_settings, text="Appearance", font=ctk.CTkFont(size=16, weight="bold")
         )
-        appearance_label.grid(row=7, column=0, padx=10, pady=(20, 5), sticky="w")
+        appearance_label.grid(row=9, column=0, padx=10, pady=(20, 5), sticky="w")
 
         self.appearance_var = ctk.StringVar(value="System")
         self.appearance_menu = ctk.CTkOptionMenu(
@@ -364,12 +406,12 @@ class DocSummarizerApp(ctk.CTk):
             command=self._change_appearance,
             width=150,
         )
-        self.appearance_menu.grid(row=8, column=0, padx=10, pady=5, sticky="w")
+        self.appearance_menu.grid(row=10, column=0, padx=10, pady=5, sticky="w")
 
         about_label = ctk.CTkLabel(
             self.tab_settings, text="About", font=ctk.CTkFont(size=16, weight="bold")
         )
-        about_label.grid(row=9, column=0, padx=10, pady=(20, 5), sticky="w")
+        about_label.grid(row=11, column=0, padx=10, pady=(20, 5), sticky="w")
 
         about_text = ctk.CTkLabel(
             self.tab_settings,
@@ -380,13 +422,13 @@ class DocSummarizerApp(ctk.CTk):
             anchor="w",
             justify="left",
         )
-        about_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
+        about_text.grid(row=12, column=0, padx=10, pady=5, sticky="w")
 
     # ------------------------------------------------------------------ #
     # Model lifecycle
     # ------------------------------------------------------------------ #
 
-    def _check_model_status(self):
+    def _check_model_status(self) -> None:
         """Check if the model is downloaded and update UI accordingly."""
         if is_model_downloaded():
             self._set_status("Model ready", STATUS_OK)
@@ -402,17 +444,23 @@ class DocSummarizerApp(ctk.CTk):
             )
             self.download_btn.configure(state="normal")
 
-    def _load_model(self):
+    def _load_model(self) -> None:
         """Load the model in a background thread."""
-        n_threads = self.threads_var.get()
-        self._initial_load_dialog = LoadingDialog(self, f"Loading model ({n_threads} threads)...")
+        n_threads = int(self.threads_var.get())
+        n_gpu_layers = self._gpu_layers()
+        mode = "GPU" if n_gpu_layers else "CPU"
+        self._initial_load_dialog = LoadingDialog(
+            self, f"Loading model ({n_threads} threads, {mode})..."
+        )
         self.select_btn.configure(state="disabled")
         self.select_folder_btn.configure(state="disabled")
-        self._set_status(f"Loading model ({n_threads} threads)...")
+        self._set_status(f"Loading model ({n_threads} threads, {mode})...")
 
-        def load():
+        def load() -> None:
             try:
-                summarizer = Summarizer(get_model_path(), n_threads=n_threads)
+                summarizer = Summarizer(
+                    get_model_path(), n_threads=n_threads, n_gpu_layers=n_gpu_layers
+                )
                 self._set_summarizer(summarizer)
                 self._ui(self._on_load_complete, True, None)
             except Exception as e:
@@ -435,7 +483,7 @@ class DocSummarizerApp(ctk.CTk):
         else:
             self._set_status(f"Error loading model: {error}", STATUS_ERROR)
 
-    def _on_threads_changed(self, _value):
+    def _on_threads_changed(self, _value: float) -> None:
         """Handle CPU threads slider change."""
         threads = int(self.threads_var.get())
         cpu_count = os.cpu_count() or 8
@@ -443,17 +491,28 @@ class DocSummarizerApp(ctk.CTk):
         if self._get_summarizer() is not None:
             self.reload_model_btn.configure(state="normal")
 
-    def _reload_model(self):
-        """Reload the model with new thread settings."""
-        n_threads = self.threads_var.get()
-        log_info(f"Reloading model with {n_threads} threads")
+    def _on_gpu_changed(self) -> None:
+        """Handle the GPU acceleration toggle."""
+        self._persist_settings()
+        if self._get_summarizer() is not None:
+            self.reload_model_btn.configure(state="normal")
 
-        loading = LoadingDialog(self, f"Reloading model with {n_threads} threads...")
+    def _reload_model(self) -> None:
+        """Reload the model with the current thread/GPU settings."""
+        self._persist_settings()
+        n_threads = int(self.threads_var.get())
+        n_gpu_layers = self._gpu_layers()
+        mode = "GPU" if n_gpu_layers else "CPU"
+        log_info(f"Reloading model with {n_threads} threads ({mode})")
 
-        def reload():
+        loading = LoadingDialog(self, f"Reloading model ({n_threads} threads, {mode})...")
+
+        def reload() -> None:
             try:
                 self._set_summarizer(None)
-                summarizer = Summarizer(get_model_path(), n_threads=n_threads)
+                summarizer = Summarizer(
+                    get_model_path(), n_threads=n_threads, n_gpu_layers=n_gpu_layers
+                )
                 self._set_summarizer(summarizer)
                 self._ui(self._on_reload_complete, loading, True, None)
             except Exception as e:
@@ -474,7 +533,7 @@ class DocSummarizerApp(ctk.CTk):
         else:
             self._set_status(f"Error: {error}", STATUS_ERROR)
 
-    def _start_model_download(self):
+    def _start_model_download(self) -> None:
         """Start downloading the model in a background thread."""
         self.download_btn.configure(state="disabled", text="Downloading...")
         self.progress_bar.set(0)
@@ -489,7 +548,7 @@ class DocSummarizerApp(ctk.CTk):
             # updates both the progress bar and the status label.
             self._ui(apply_progress, percent, message)
 
-        def download():
+        def download() -> None:
             _path, error = download_model(progress_callback=on_progress)
             if error:
                 self._ui(self._set_status, error, STATUS_ERROR)
@@ -504,7 +563,7 @@ class DocSummarizerApp(ctk.CTk):
     # File handling
     # ------------------------------------------------------------------ #
 
-    def _select_file(self):
+    def _select_file(self) -> None:
         """Open file dialog to select a document."""
         filepath = filedialog.askopenfilename(
             title="Select Document", filetypes=SUPPORTED_EXTENSIONS
@@ -512,7 +571,7 @@ class DocSummarizerApp(ctk.CTk):
         if filepath:
             self._process_file(filepath)
 
-    def _select_folder(self):
+    def _select_folder(self) -> None:
         """Open folder dialog for batch processing."""
         folder = filedialog.askdirectory(title="Select Folder with Documents")
         if not folder:
@@ -526,7 +585,7 @@ class DocSummarizerApp(ctk.CTk):
         if messagebox.askyesno("Batch Processing", f"Found {len(files)} document(s). Process all?"):
             self._batch_process(files)
 
-    def _process_file(self, filepath: str):
+    def _process_file(self, filepath: str) -> None:
         """Extract text from the selected file."""
         self.current_file = filepath
         info = get_document_info(filepath)
@@ -549,7 +608,7 @@ class DocSummarizerApp(ctk.CTk):
 
         self._update_button_states()
 
-    def _update_button_states(self):
+    def _update_button_states(self) -> None:
         """Update button states based on current state."""
         can_summarize = self._get_summarizer() is not None and self.extracted_text is not None
         self.summarize_btn.configure(state="normal" if can_summarize else "disabled")
@@ -558,7 +617,7 @@ class DocSummarizerApp(ctk.CTk):
     # Summarization
     # ------------------------------------------------------------------ #
 
-    def _start_summarization(self):
+    def _start_summarization(self) -> None:
         """Start the summarization process in a background thread."""
         summarizer = self._get_summarizer()
         if summarizer is None or not self.extracted_text:
@@ -571,7 +630,7 @@ class DocSummarizerApp(ctk.CTk):
         self.progress_bar.set(0.3)
         self._set_status("Generating summary...")
 
-        def summarize():
+        def summarize() -> None:
             try:
                 summary = summarizer.summarize(text_to_summarize, summary_type=summary_type)
                 self._ui(self._on_summary_complete, summary, None)
@@ -599,7 +658,7 @@ class DocSummarizerApp(ctk.CTk):
             self.summarize_btn.configure(state="normal", text="Summarize")
             self.progress_bar.set(0)
 
-    def _batch_process(self, files: list[Path]):
+    def _batch_process(self, files: list[Path]) -> None:
         """Process multiple files and save summaries."""
         output_folder = filedialog.askdirectory(title="Select Output Folder for Summaries")
         if not output_folder:
@@ -617,7 +676,7 @@ class DocSummarizerApp(ctk.CTk):
             self._set_status(text)
             self.progress_bar.set(value)
 
-        def process_batch():
+        def process_batch() -> None:
             total = len(files)
             success_count = 0
             failures: list[tuple[str, str]] = []
@@ -679,7 +738,7 @@ class DocSummarizerApp(ctk.CTk):
     # Save / appearance
     # ------------------------------------------------------------------ #
 
-    def _save_summary(self):
+    def _save_summary(self) -> None:
         """Save the current summary to a file."""
         if not self.current_file:
             return
@@ -712,17 +771,17 @@ class DocSummarizerApp(ctk.CTk):
             # Batch mode does add a header via write_summary_txt; the
             # asymmetry is deliberate because the user already sees the
             # content in the textbox.
-            with open(filepath, "w", encoding="utf-8") as f:
+            with Path(filepath).open("w", encoding="utf-8") as f:
                 f.write(content)
 
         self._set_status(f"Saved: {Path(filepath).name}", STATUS_OK)
 
-    def _change_appearance(self, mode: str):
+    def _change_appearance(self, mode: str) -> None:
         """Change the application appearance mode."""
         ctk.set_appearance_mode(mode)
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     app = DocSummarizerApp()
     app.mainloop()
