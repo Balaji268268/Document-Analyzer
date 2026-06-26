@@ -13,8 +13,6 @@ downloaded into the app-data dir on first run.
 import importlib.util
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
-
 
 def _llama_cpp_lib_dir() -> Path | None:
     """Locate the llama_cpp/lib directory of the active interpreter, if present."""
@@ -37,10 +35,6 @@ if llama_cpp_lib is not None:
         if f.suffix in (".dll", ".so", ".dylib"):
             llama_binaries.append((str(f), "llama_cpp/lib"))
 
-# Collect everything PySide6 needs: Qt libraries, the QML plugins for the
-# modules we import (QtQuick, Controls.Basic, Layouts), and platform plugins.
-pyside_datas, pyside_binaries, pyside_hiddenimports = collect_all("PySide6")
-
 # Ship the QML sources as data, preserving the package-relative layout so
 # app.py's ``Path(__file__).parent / "qml"`` resolves inside the bundle.
 qml_root = src_dir / "docsummarizer" / "ui" / "qml"
@@ -54,8 +48,8 @@ qml_datas = [
 a = Analysis(
     [str(spec_dir / "run.py")],
     pathex=[str(src_dir)],
-    binaries=llama_binaries + pyside_binaries,
-    datas=qml_datas + pyside_datas,
+    binaries=llama_binaries,
+    datas=qml_datas,
     hiddenimports=[
         # Package modules — PyInstaller's static analysis can miss these because
         # the entry point imports them via relative paths.
@@ -69,7 +63,10 @@ a = Analysis(
         "docsummarizer.logger",
         "docsummarizer.model_manager",
         "docsummarizer.settings",
-        # Qt modules used by the QML UI.
+        # Qt modules the QML UI uses. PySide6's bundled PyInstaller hooks collect
+        # the matching QML plugins (QtQuick, QtQuick.Controls.Basic, QtQuick.Layouts)
+        # for exactly these — no need for a blanket collect_all (which drags in
+        # unused modules like QtMultimediaWidgets and their broken hooks).
         "PySide6.QtCore",
         "PySide6.QtGui",
         "PySide6.QtQml",
@@ -83,16 +80,29 @@ a = Analysis(
         "chardet",
         "huggingface_hub",
         "tqdm",
-        "tiktoken",
-        "tiktoken_ext",
-        "tiktoken_ext.openai_public",
         "psutil",
-        *pyside_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["customtkinter", "tkinter"],
+    excludes=[
+        "customtkinter",
+        "tkinter",
+        # Heavy PySide6 modules we never import. Excluding them avoids pulling
+        # in broken/irrelevant hooks and keeps the bundle smaller.
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.QtWebEngineQuick",
+        "PySide6.Qt3DCore",
+        "PySide6.Qt3DRender",
+        "PySide6.QtCharts",
+        "PySide6.QtDataVisualization",
+        "PySide6.QtWebSockets",
+        "PySide6.QtBluetooth",
+        "PySide6.QtPositioning",
+    ],
     noarchive=False,
 )
 
