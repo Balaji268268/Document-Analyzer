@@ -25,24 +25,17 @@ from docsummarizer.ollama_client import is_ollama_available, query_ollama
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        """Serve Qt QML WebAssembly interface from public/index.html."""
-        html_file = ROOT_DIR / "public" / "index.html"
-        if html_file.exists():
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(html_file.read_bytes())
-        else:
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            response = {
-                "status": "online",
-                "app": "Document-Analyzer API",
-                "version": "2.0.0",
-                "ollama_available": is_ollama_available(),
-            }
-            self.wfile.write(json.dumps(response).encode("utf-8"))
+        """Return JSON status of Document-Analyzer API endpoint."""
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        response = {
+            "status": "online",
+            "app": "Document-Analyzer API",
+            "version": "2.0.0",
+            "ollama_available": is_ollama_available(),
+        }
+        self.wfile.write(json.dumps(response).encode("utf-8"))
 
     def do_POST(self):
         """Process document upload and return AI summary analytics as JSON."""

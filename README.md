@@ -3,7 +3,9 @@ title: DocSummarizer QML Desktop
 emoji: 🖥️
 colorFrom: blue
 colorTo: purple
-sdk: static
+sdk: gradio
+sdk_version: 4.28.3
+app_file: app.py
 pinned: false
 ---
 
