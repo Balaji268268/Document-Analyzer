@@ -1,3 +1,13 @@
+---
+title: DocSummarizer QML Desktop
+emoji: 🖥️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 <div align="center">
 
 # DocSummarizer — Document Summary Assistant
