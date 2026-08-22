@@ -1,0 +1,206 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docsummarizer"
+version = "2.0.0"
+description = "Offline document summarization powered by a local LLM"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Ananthagari Venkata Balaji", email = "galigastagiramma@gmail.com" }]
+keywords = ["llm", "summarization", "offline", "pdf", "docx", "qwen", "llama-cpp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    # Document parsing. pypdf <6.10.2 carries ~24 DoS advisories.
+    "pypdf>=6.14,<7",
+    "python-docx>=1.2,<2",
+    "striprtf>=0.0.32",
+    "chardet>=7.4,<8",
+    # Utilities. tqdm <4.66.3 has CVE-2024-34062.
+    "huggingface-hub>=1.21,<2",
+    "tqdm>=4.68,<5",
+    "psutil>=7.2,<8",
+]
+
+[project.optional-dependencies]
+# `runtime` carries the heavy native LLM backend. Split out from the
+# default deps because llama-cpp-python ships wheels only for a narrow
+# matrix; CI installs the package without it (tests stub the Llama
+# import). End users install `docsummarizer[runtime]` via the setup
+# scripts.
+runtime = [
+    "llama-cpp-python>=0.3.31,<0.4",
+]
+dev = [
+    "pytest>=9.0,<10",
+    "pytest-cov>=7.0,<8",
+    "ruff>=0.15,<0.16",
+    "mypy>=2.1,<3",
+]
+gui = [
+    # Native Qt/QML desktop UI (the "Abstract Console" redesign). Optional so a
+    # CLI-only install stays lean; required to launch the desktop app and to
+    # type-check / test the ui package.
+    "PySide6>=6.7,<7",
+]
+
+[project.scripts]
+docsummarizer-cli = "docsummarizer.cli:main"
+
+[project.gui-scripts]
+docsummarizer = "docsummarizer.ui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/Balaji268268/Document-Analyzer"
+Issues = "https://github.com/Balaji268268/Document-Analyzer/issues"
+Releases = "https://github.com/Balaji268268/Document-Analyzer/releases"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docsummarizer"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/docsummarizer",
+    "run.py",
+    "README.md",
+    "LICENSE",
+    "DEVELOPMENT.md",
+    "DocSummarizer.spec",
+]
+
+# --------------------------------------------------------------------------- #
+# Ruff: linter + formatter
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "A",        # flake8-builtins
+    "C4",       # flake8-comprehensions
+    "EM",       # flake8-errmsg
+    "FA",       # flake8-future-annotations
+    "G",        # flake8-logging-format
+    "ICN",      # flake8-import-conventions
+    "ISC",      # flake8-implicit-str-concat
+    "LOG",      # flake8-logging
+    "PIE",      # flake8-pie
+    "PT",       # flake8-pytest-style
+    "PTH",      # flake8-use-pathlib
+    "Q",        # flake8-quotes
+    "RSE",      # flake8-raise
+    "RET",      # flake8-return
+    "SLF",      # flake8-self
+    "SIM",      # flake8-simplify
+    "TID",      # flake8-tidy-imports
+    "TRY",      # tryceratops
+    "PERF",     # perflint
+    "FURB",     # refurb
+    "PL",       # pylint
+    "S",        # flake8-bandit (security)
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "E501",    # line length — handled by the formatter
+    "ISC001",  # conflicts with the formatter
+    "TRY003",  # long messages outside exception class — too noisy for an app
+    "PLR2004", # "magic value" comparisons — noisy and low value here
+    "PLR0913", # too many arguments — constructors / argparse wiring need them
+    "PLC0415", # import outside top level — intentional lazy imports for heavy/optional deps
+    "G004",    # the log_* wrappers take pre-formatted strings; lazy %-formatting doesn't apply
+    "EM",      # assigning exception messages to a variable first is verbose, not clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately assert (S101), reach into private helpers (SLF001),
+# and use bugbear-flagged fixture patterns (B).
+"tests/*" = ["S101", "SLF001", "B"]
+# Qt requires camelCase for QObject signals/slots/properties so QML can bind
+# them; pep8-naming (N802/N815) does not apply to the Qt UI bridge.
+"src/docsummarizer/ui/*" = ["N802", "N815"]
+# Dev/QA scripts may seed bridge internals for offscreen rendering.
+"scripts/*" = ["SLF001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# --------------------------------------------------------------------------- #
+# mypy: strict static type checking of the shipped code
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.12"
+strict = true
+follow_imports = "silent"
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+mypy_path = "src"
+files = ["src/docsummarizer", "run.py"]
+
+[[tool.mypy.overrides]]
+# Third-party libraries without bundled type information. Treat their imports
+# as untyped rather than erroring on the missing stubs.
+module = [
+    "pypdf.*",
+    "llama_cpp.*",
+    "huggingface_hub.*",
+    "docx.*",
+    "chardet.*",
+    "tqdm.*",
+    "psutil.*",
+    "pytesseract.*",
+    "PIL.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# striprtf and numpy ship external types that can mismatch python version stubs in virtualenvs. Skip following them.
+module = ["striprtf.*", "numpy.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# --------------------------------------------------------------------------- #
+# pytest + coverage
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+
+[tool.coverage.run]
+source = ["docsummarizer"]
+branch = true
+# ui/app.py launches the Qt event loop and needs a display; it's validated
+# manually (its engine wiring is covered by the QML load test), so it's
+# excluded from the coverage gate.
+omit = ["*/ui/app.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 60
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
