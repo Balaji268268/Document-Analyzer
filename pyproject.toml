@@ -149,8 +149,9 @@ docstring-code-format = true
 # mypy: strict static type checking of the shipped code
 # --------------------------------------------------------------------------- #
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 strict = true
+follow_imports = "silent"
 warn_unreachable = true
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -168,13 +169,14 @@ module = [
     "chardet.*",
     "tqdm.*",
     "psutil.*",
+    "pytesseract.*",
+    "PIL.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# striprtf ships no type information and *is* installed in CI, so strict mode
-# would flag calls into it as "untyped". Skip following it — treat it as Any.
-module = ["striprtf.*"]
+# striprtf and numpy ship external types that can mismatch python version stubs in virtualenvs. Skip following them.
+module = ["striprtf.*", "numpy.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
