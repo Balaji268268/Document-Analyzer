@@ -299,3 +299,34 @@ def test_summarizer_close_is_idempotent_without_llama_cpp() -> None:
     s.llm = None
     s.close()  # no-op
     s.close()  # second call must also be a no-op
+
+
+def test_summarize_reports_progress() -> None:
+    """summarize and summarize_structured fire progress_callback with percentage and message."""
+    fake = _FakeLLM(content="SUMMARY")
+    s = _shell(fake)
+    calls: list[tuple[float, str]] = []
+
+    def cb(pct: float, msg: str) -> None:
+        calls.append((pct, msg))
+
+    s.summarize("test doc", SUMMARY_TYPE_BRIEF, progress_callback=cb)
+    assert len(calls) >= 2
+    assert calls[0][0] == 10.0
+    assert calls[-1][0] == 100.0
+    assert "complete" in calls[-1][1].lower()
+
+
+def test_build_structured_parses_suggestions() -> None:
+    from docsummarizer.model_manager import SUMMARY_TYPE_DETAILED, _build_structured
+
+    parsed = {
+        "lead": "Overview lead sentence.",
+        "points": [{"text": "Point one", "quote": "Sentence one."}],
+        "suggestions": ["Clarify acronyms in section 2."],
+    }
+    summary = _build_structured(parsed, SUMMARY_TYPE_DETAILED, "Sentence one. Sentence two.", 0)
+    assert summary.suggestions == ["Clarify acronyms in section 2."]
+    assert "Improvement Suggestions:" in summary.text
+    assert "Clarify acronyms in section 2." in summary.text
+

@@ -8,10 +8,10 @@ import json
 import os
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from huggingface_hub import hf_hub_download
 
@@ -176,13 +176,15 @@ _STRUCTURED_SECTIONS = ("PURPOSE", "METHOD", "RESULTS", "CONCLUSIONS")
 _DETAILED_JSON_INSTRUCTION = (
     "Summarize the document as a JSON object of the form "
     '{"lead": "<one-sentence overview>", "points": [{"text": "<key point>", '
-    '"quote": "<verbatim supporting sentence from the document>"}]}. '
-    f"Provide exactly {_DETAILED_POINT_COUNT} points, each with a verbatim quote."
+    '"quote": "<verbatim supporting sentence from the document>"}], '
+    '"suggestions": ["<optional document improvement suggestion, e.g. unclear section, poor organization, or missing context>"]}. '
+    f"Provide exactly {_DETAILED_POINT_COUNT} points, each with a verbatim quote, and 1-3 document improvement suggestions."
 )
 _STRUCTURED_JSON_INSTRUCTION = (
     "Summarize the document as a JSON object of the form "
     '{"sections": {"PURPOSE": [{"text": "...", "quote": "<verbatim sentence>"}], '
-    '"METHOD": [...], "RESULTS": [...], "CONCLUSIONS": [{"text": "..."}]}}. '
+    '"METHOD": [...], "RESULTS": [...], "CONCLUSIONS": [{"text": "..."}]}, '
+    '"suggestions": ["<optional document improvement suggestion>"]}. '
     "Every PURPOSE, METHOD, and RESULTS point must include a verbatim quote from "
     "the document; CONCLUSIONS is a synthesis and needs no quote."
 )
@@ -213,6 +215,7 @@ class StructuredSummary:
     points: list[SummaryPoint]
     sections: dict[str, list[SummaryPoint]] | None
     text: str
+    suggestions: list[str] | None = None
 
 
 def _split_into_chunks_with_offsets(text: str, max_chars: int) -> list[tuple[str, int]]:
@@ -323,6 +326,13 @@ def _ground_points(
     return points
 
 
+def _read_raw_suggestions(value: Any) -> list[str]:
+    """Coerce parsed suggestions array into clean strings."""
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()][:3]
+
+
 def _build_structured(
     parsed: dict[str, Any], summary_type: str, text: str, base: int
 ) -> StructuredSummary:
@@ -332,12 +342,13 @@ def _build_structured(
     single pass and a map-reduce pass agree on the per-section bound.
     """
     sentences = split_sentences(text)
+    suggestions = _read_raw_suggestions(parsed.get("suggestions"))
     if summary_type == SUMMARY_TYPE_DETAILED:
         lead = str(parsed.get("lead", "")).strip() or None
         points = _ground_points(_read_raw_points(parsed.get("points")), text, base, sentences)[
             :_DETAILED_POINT_COUNT
         ]
-        return _make_structured(SUMMARY_TYPE_DETAILED, lead, points, None)
+        return _make_structured(SUMMARY_TYPE_DETAILED, lead, points, None, suggestions)
     raw_sections = parsed.get("sections")
     raw_sections = raw_sections if isinstance(raw_sections, dict) else {}
     sections = {
@@ -346,7 +357,7 @@ def _build_structured(
         ]
         for name in _STRUCTURED_SECTIONS
     }
-    return _make_structured(SUMMARY_TYPE_STRUCTURED, None, [], sections)
+    return _make_structured(SUMMARY_TYPE_STRUCTURED, None, [], sections, suggestions)
 
 
 def _render_structured(
@@ -354,6 +365,7 @@ def _render_structured(
     lead: str | None,
     points: list[SummaryPoint],
     sections: dict[str, list[SummaryPoint]] | None,
+    suggestions: list[str] | None = None,
 ) -> str:
     """Render a structured summary as plain text (for the CLI / Save path)."""
     lines: list[str] = []
@@ -372,6 +384,11 @@ def _render_structured(
         if points and lines:
             lines.append("")
         lines.extend(f"- {point.text}" for point in points)
+    if suggestions:
+        if lines:
+            lines.append("")
+        lines.append("Improvement Suggestions:")
+        lines.extend(f"- {s}" for s in suggestions)
     return "\n".join(lines).strip()
 
 
@@ -380,6 +397,7 @@ def _make_structured(
     lead: str | None,
     points: list[SummaryPoint],
     sections: dict[str, list[SummaryPoint]] | None,
+    suggestions: list[str] | None = None,
 ) -> StructuredSummary:
     """Assemble a ``StructuredSummary``, rendering its ``text`` form once.
 
@@ -391,7 +409,8 @@ def _make_structured(
         lead,
         points,
         sections,
-        _render_structured(summary_type, lead, points, sections),
+        _render_structured(summary_type, lead, points, sections, suggestions),
+        suggestions=suggestions,
     )
 
 
@@ -527,6 +546,12 @@ def download_model(
         if progress_callback:
             progress_callback(0.0, error_msg)
         return model_path, error_msg
+
+
+def _report_progress(callback: Callable[[float, str], None] | None, pct: float, msg: str) -> None:
+    if callback:
+        with suppress(Exception):
+            callback(pct, msg)
 
 
 class Summarizer:
@@ -694,17 +719,21 @@ class Summarizer:
             raise RuntimeError(_CLOSED_MESSAGE)
         check = self._cancel_check
         if check is None:
-            response = llm.create_chat_completion(messages=messages, **kwargs)
+            response: Any = llm.create_chat_completion(messages=cast(Any, messages), **kwargs)
             return str(response["choices"][0]["message"].get("content") or "").strip()
         _raise_if_cancelled(check)
         content = ""
         try:
             with self._llama_abort_callback_guard(check):
-                for chunk in llm.create_chat_completion(messages=messages, stream=True, **kwargs):
+                stream_resp: Any = llm.create_chat_completion(messages=cast(Any, messages), stream=True, **kwargs)
+                for chunk in stream_resp:
                     _raise_if_cancelled(check)
-                    delta = (chunk["choices"][0].get("delta") or {}).get("content")
-                    if delta:
-                        content += delta
+                    choices: Any = chunk.get("choices") if isinstance(chunk, dict) else None
+                    first_choice: Any = choices[0] if isinstance(choices, list) and choices else {}
+                    delta: Any = first_choice.get("delta") if isinstance(first_choice, dict) else {}
+                    text_delta: Any = delta.get("content") if isinstance(delta, dict) else None
+                    if isinstance(text_delta, str):
+                        content += text_delta
                 _raise_if_cancelled(check)
         except SummarizationCancelledError:
             raise
@@ -720,6 +749,7 @@ class Summarizer:
         summary_type: str = SUMMARY_TYPE_DETAILED,
         max_tokens: int = 1024,
         should_cancel: Callable[[], bool] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> str:
         """Generate a summary of the given text.
 
@@ -733,6 +763,8 @@ class Summarizer:
             summary_type: one of `SUMMARY_TYPES`. Unknown values fall back to
                 "detailed" to preserve the prior tolerant behavior.
             max_tokens: Maximum tokens in the response
+            should_cancel: Optional cancellation predicate
+            progress_callback: Optional progress reporter callback (pct, message)
 
         Returns:
             The generated summary
@@ -743,25 +775,36 @@ class Summarizer:
         self._cancel_check = should_cancel
         text = text.strip()
         log_info(f"Starting summarization: type={summary_type}, input_chars={len(text)}")
+        _report_progress(progress_callback, 10.0, "Analyzing document text…")
 
         budget_tokens = max(self.n_ctx - max_tokens - _SCAFFOLD_TOKENS, _MIN_CHUNK_TOKENS)
         budget_chars = budget_tokens * _CHARS_PER_TOKEN
 
         if len(text) <= budget_chars:
             start_time = time.time()
+            _report_progress(progress_callback, 35.0, "Running AI inference (Qwen3 4B)…")
             summary = self._summarize_once(text, summary_type, max_tokens)
             self._log_speed(summary, time.time() - start_time)
+            _report_progress(progress_callback, 100.0, "Summary complete")
             return summary
 
         # Document exceeds the context budget: map-reduce.
         chunks = _split_into_chunks(text, budget_chars)
-        log_info(f"Document exceeds context budget; summarizing in {len(chunks)} chunks")
+        total_chunks = len(chunks)
+        log_info(f"Document exceeds context budget; summarizing in {total_chunks} chunks")
+        _report_progress(
+            progress_callback, 15.0, f"Processing document in {total_chunks} sections…"
+        )
         start_time = time.time()
 
         partials = []
         for i, chunk in enumerate(chunks, 1):
             _raise_if_cancelled(should_cancel)
-            log_info(f"Summarizing chunk {i}/{len(chunks)} ({len(chunk)} chars)")
+            pct = 15.0 + (i / total_chunks) * 65.0
+            _report_progress(
+                progress_callback, pct, f"Analyzing section {i} of {total_chunks}…"
+            )
+            log_info(f"Summarizing chunk {i}/{total_chunks} ({len(chunk)} chars)")
             partials.append(self._summarize_once(chunk, summary_type, max_tokens))
         combined = "\n\n".join(partials)
 
@@ -770,10 +813,14 @@ class Summarizer:
         # text, so this terminates.
         if len(combined) > budget_chars:
             log_info("Combined section summaries still exceed budget; reducing again")
-            return self.summarize(combined, summary_type, max_tokens, should_cancel)
+            return self.summarize(
+                combined, summary_type, max_tokens, should_cancel, progress_callback
+            )
 
+        _report_progress(progress_callback, 85.0, "Synthesizing section summaries…")
         summary = self._synthesize(combined, summary_type, max_tokens)
         self._log_speed(summary, time.time() - start_time)
+        _report_progress(progress_callback, 100.0, "Summary complete")
         return summary
 
     def summarize_structured(
@@ -782,6 +829,7 @@ class Summarizer:
         summary_type: str = SUMMARY_TYPE_DETAILED,
         max_tokens: int = 1024,
         should_cancel: Callable[[], bool] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> StructuredSummary:
         """Summarize into discrete, source-grounded points for the GUI.
 
@@ -799,22 +847,32 @@ class Summarizer:
         # (extracted documents commonly start with whitespace). split_sentences
         # already ignores leading/trailing whitespace for grounding.
         if summary_type == SUMMARY_TYPE_BRIEF:
-            lead = self.summarize(text, SUMMARY_TYPE_BRIEF, max_tokens, should_cancel)
+            _report_progress(progress_callback, 10.0, "Generating brief summary…")
+            lead = self.summarize(
+                text, SUMMARY_TYPE_BRIEF, max_tokens, should_cancel, progress_callback
+            )
             return StructuredSummary(SUMMARY_TYPE_BRIEF, lead or None, [], None, lead)
 
         if summary_type not in (SUMMARY_TYPE_DETAILED, SUMMARY_TYPE_STRUCTURED):
             summary_type = SUMMARY_TYPE_DETAILED
 
-        log_info(f"Starting structured summarization: type={summary_type}, input_chars={len(text)}")
+        log_info(
+            f"Starting structured summarization: type={summary_type}, input_chars={len(text)}"
+        )
+        _report_progress(progress_callback, 10.0, "Analyzing document structure…")
         try:
-            result = self._summarize_structured(text, summary_type, max_tokens, should_cancel)
+            result = self._summarize_structured(
+                text, summary_type, max_tokens, should_cancel, progress_callback
+            )
         except SummarizationCancelledError:
             raise  # a clean stop must not fall back to more inference
         except Exception as exc:
             log_warning(f"Structured summarization failed ({exc!s}); falling back to prose")
             result = None
         if result is None:
-            return self._fallback_structured(text, summary_type, max_tokens)
+            _report_progress(progress_callback, 80.0, "Formatting prose summary…")
+            result = self._fallback_structured(text, summary_type, max_tokens)
+        _report_progress(progress_callback, 100.0, "Summary complete")
         return result
 
     def _summarize_structured(
@@ -823,6 +881,7 @@ class Summarizer:
         summary_type: str,
         max_tokens: int,
         should_cancel: Callable[[], bool] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> StructuredSummary | None:
         """Run the structured path; ``None`` signals the caller to fall back."""
         self._cancel_check = should_cancel
@@ -837,24 +896,36 @@ class Summarizer:
         )
 
         if len(text) <= budget_chars:
+            _report_progress(progress_callback, 30.0, "Running AI inference (Qwen3 4B)…")
             parsed = _parse_structured_json(
                 self._chat_json(f"{instruction}\n\nDocument:\n{text}", max_tokens)
             )
             if parsed is None:
                 return None
+            _report_progress(progress_callback, 75.0, "Locating and verifying source citations…")
             built = _build_structured(parsed, summary_type, text, 0)
+            _report_progress(progress_callback, 90.0, "Finalizing summary output…")
             return None if _is_empty_structured(built) else built
 
         # Map each chunk (citations already at global offsets), keeping per-chunk
         # groups. Reduce by drawing across chunks round-robin, so a long document
         # draws from its whole body rather than only the first chunk.
+        chunks_with_offsets = _split_into_chunks_with_offsets(text, budget_chars)
+        total_chunks = len(chunks_with_offsets)
+        _report_progress(
+            progress_callback, 15.0, f"Processing document in {total_chunks} sections…"
+        )
         lead: str | None = None
         detailed_groups: list[list[SummaryPoint]] = []
         section_groups: dict[str, list[list[SummaryPoint]]] = {
             name: [] for name in _STRUCTURED_SECTIONS
         }
-        for chunk_text, base in _split_into_chunks_with_offsets(text, budget_chars):
+        for idx, (chunk_text, base) in enumerate(chunks_with_offsets, 1):
             _raise_if_cancelled(should_cancel)
+            pct = 15.0 + (idx / total_chunks) * 60.0
+            _report_progress(
+                progress_callback, pct, f"Analyzing section {idx} of {total_chunks}…"
+            )
             parsed = _parse_structured_json(
                 self._chat_json(f"{instruction}\n\nDocument:\n{chunk_text}", max_tokens)
             )

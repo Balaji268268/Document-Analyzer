@@ -99,6 +99,7 @@ def summary_to_variant(summary: StructuredSummary) -> dict[str, Any]:
             name: [_point_to_variant(p) for p in pts]
             for name, pts in (summary.sections or {}).items()
         },
+        "suggestions": summary.suggestions or [],
         "text": summary.text,
     }
 
@@ -119,6 +120,7 @@ class ConsoleBridge(QObject):
     summaryTypeChanged = Signal()
     reloadArmedChanged = Signal()
     downloadChanged = Signal()
+    summaryProgressChanged = Signal()
 
     # One-shot events.
     progress = Signal(float, str)
@@ -155,6 +157,7 @@ class ConsoleBridge(QObject):
         self._summary_type = SUMMARY_TYPE_DETAILED
         self._reload_armed = False
         self._download_pct = 0.0
+        self._summary_progress = 0.0
         self._downloading = False
         self._batch_rows: list[dict[str, Any]] = []
         self._last_summary: StructuredSummary | None = None
@@ -323,6 +326,11 @@ class ConsoleBridge(QObject):
         return self._download_pct
 
     downloadPercent = Property(float, _get_download_pct, notify=downloadChanged)
+
+    def _get_summary_progress(self) -> float:
+        return self._summary_progress
+
+    summaryProgress = Property(float, _get_summary_progress, notify=summaryProgressChanged)
 
     def _get_batch_rows(self) -> list[dict[str, Any]]:
         return self._batch_rows
@@ -509,22 +517,37 @@ class ConsoleBridge(QObject):
         text = self._extracted_text
         summary_type = self._summary_type
         self._cancel_requested = False
+        self._summary_progress = 0.0
+        self.summaryProgressChanged.emit()
         self._set_busy(True)
         self._set_status("Generating summary…", "ok")
+
+        def on_progress(pct: float, message: str) -> None:
+            self._summary_progress = pct
+            self.summaryProgressChanged.emit()
+            self._set_status(message, "ok")
+            self.progress.emit(pct, message)
 
         def work() -> StructuredSummary | None:
             try:
                 return summarizer.summarize_structured(
-                    text, summary_type, should_cancel=lambda: self._cancel_requested
+                    text,
+                    summary_type,
+                    should_cancel=lambda: self._cancel_requested,
+                    progress_callback=on_progress,
                 )
             except SummarizationCancelledError:
                 return None
 
         def done(summary: Any) -> None:
             if summary is None:  # cancelled cleanly between chunks
+                self._summary_progress = 0.0
+                self.summaryProgressChanged.emit()
                 self._finish("Stopped", "warn")
                 return
             self._last_summary = summary
+            self._summary_progress = 100.0
+            self.summaryProgressChanged.emit()
             self._finish("Summary complete")
             self.summaryReady.emit(summary_to_variant(summary))
 

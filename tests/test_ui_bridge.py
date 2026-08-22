@@ -33,8 +33,14 @@ class _FakeSummarizer:
         self.closed = False
 
     def summarize_structured(
-        self, text: str, summary_type: str = SUMMARY_TYPE_DETAILED, should_cancel: object = None
+        self,
+        text: str,
+        summary_type: str = SUMMARY_TYPE_DETAILED,
+        should_cancel: object = None,
+        progress_callback: object = None,
     ) -> StructuredSummary:
+        if callable(progress_callback):
+            progress_callback(50.0, "Working...")
         return StructuredSummary(
             summary_type,
             "the lead",
@@ -113,6 +119,21 @@ def test_summarize_emits_marshalled_summary(qapp, monkeypatch, tmp_path) -> None
     assert bridge._get_busy() is False
 
 
+def test_summarize_updates_summary_progress(qapp, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
+    bridge = _bridge()
+    bridge.checkModel()
+
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Test document content", encoding="utf-8")
+    bridge.loadDocument(str(doc))
+
+    spy = QSignalSpy(bridge.summaryProgressChanged)
+    bridge.summarize()
+    assert spy.count() >= 2
+    assert bridge.summaryProgress == 100.0
+
+
 def test_load_document_error_blocks_summarize(qapp, monkeypatch) -> None:
     monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
     bridge = _bridge()
@@ -131,10 +152,16 @@ class _CountingFake(_FakeSummarizer):
         self.calls = 0
 
     def summarize_structured(
-        self, text: str, summary_type: str = SUMMARY_TYPE_DETAILED, should_cancel: object = None
+        self,
+        text: str,
+        summary_type: str = SUMMARY_TYPE_DETAILED,
+        should_cancel: object = None,
+        progress_callback: object = None,
     ) -> StructuredSummary:
         self.calls += 1
-        return super().summarize_structured(text, summary_type, should_cancel)
+        return super().summarize_structured(
+            text, summary_type, should_cancel=should_cancel, progress_callback=progress_callback
+        )
 
 
 def _loaded_bridge(monkeypatch, tmp_path, *, fake=None):
@@ -246,7 +273,11 @@ def test_async_load_document_completes_off_thread(qapp, monkeypatch, tmp_path) -
 
 class _CancelledFake(_FakeSummarizer):
     def summarize_structured(
-        self, text: str, summary_type: str = SUMMARY_TYPE_DETAILED, should_cancel: object = None
+        self,
+        text: str,
+        summary_type: str = SUMMARY_TYPE_DETAILED,
+        should_cancel: object = None,
+        progress_callback: object = None,
     ) -> StructuredSummary:
         raise SummarizationCancelledError
 
@@ -378,7 +409,7 @@ def test_batch_process_summarizes_folder(qapp, monkeypatch, tmp_path) -> None:
 
     (tmp_path / "a.txt").write_text("Document A content here.", encoding="utf-8")
     (tmp_path / "b.md").write_text("Document B content here.", encoding="utf-8")
-    (tmp_path / "ignore.png").write_bytes(b"not a document")
+    (tmp_path / "ignore.xyz").write_bytes(b"not a document")
     out = tmp_path / "out"
     out.mkdir()
 
@@ -388,7 +419,7 @@ def test_batch_process_summarizes_folder(qapp, monkeypatch, tmp_path) -> None:
     assert spy.count() == 1
     done_count, total, failures, _out_dir = spy.at(0)
     assert done_count == 2
-    assert total == 2  # the .png is not a supported document
+    assert total == 2  # the .xyz is not a supported document
     assert failures == []
     assert (out / "a_summary.txt").exists()
     assert (out / "b_summary.txt").exists()

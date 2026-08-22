@@ -79,13 +79,16 @@ Item {
         }
         function onDocChanged() {
             screen.resetProvenance();
+            if (bridge.hasDoc && bridge.extractedText !== "" && !bridge.busy && !bridge.lastSummary) {
+                bridge.summarize();
+            }
         }
     }
 
     FileDialog {
         id: openDialog
-        title: "Select a document"
-        nameFilters: ["Documents (*.pdf *.docx *.rtf *.txt *.md)", "All files (*)"]
+        title: "Select a document or image"
+        nameFilters: ["Supported Files (*.pdf *.docx *.rtf *.txt *.md *.png *.jpg *.jpeg *.webp *.bmp *.tiff)", "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tiff)", "All files (*)"]
         onAccepted: bridge.loadDocument(selectedFile.toString())
     }
 
@@ -127,7 +130,7 @@ Item {
                 }
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Drop a document to summarize"
+                    text: "Drop a document or image to summarize"
                     color: Theme.ink
                     font.family: Theme.serif
                     font.pixelSize: 25
@@ -135,14 +138,14 @@ Item {
                 }
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "or click to browse — PDF, DOCX, RTF, TXT, MD"
+                    text: "or click to browse — PDF, DOCX, RTF, TXT, MD, PNG, JPG"
                     color: Theme.faint
                     font.family: Theme.body
                     font.pixelSize: 13
                 }
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "SUPPORTED · PDF · DOCX · RTF · TXT · MD"
+                    text: "SUPPORTED · PDF · DOCX · OCR IMAGES · RTF · TXT · MD"
                     color: Theme.dim
                     font.family: Theme.mono
                     font.pixelSize: 9
@@ -250,10 +253,19 @@ Item {
             Item {
                 Layout.fillWidth: true
             }
-            SegmentedControl {
-                options: bridge.summaryTypes
-                current: bridge.summaryType
-                onSelected: value => bridge.setSummaryType(value)
+            RowLayout {
+                spacing: 10
+                SegmentedControl {
+                    options: bridge.summaryTypes
+                    current: bridge.summaryType
+                    onSelected: value => bridge.setSummaryType(value)
+                }
+                ConsoleButton {
+                    text: bridge.busy ? "SUMMARIZING…" : "REGENERATE"
+                    primary: true
+                    enabled: !bridge.busy && bridge.hasDoc
+                    onClicked: bridge.summarize()
+                }
             }
         }
 
@@ -365,6 +377,11 @@ Item {
                     anchors.margins: 16
                     spacing: 10
                     opacity: bridge.busy ? 0 : 1
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 200
+                        }
+                    }
                     RowLayout {
                         Layout.fillWidth: true
                         SectionLabel {
@@ -525,6 +542,57 @@ Item {
                         }
                     }
 
+                    // Improvement Suggestions section (if present)
+                    Rectangle {
+                        visible: Boolean(screen.summary && screen.summary.suggestions && screen.summary.suggestions.length > 0)
+                        Layout.fillWidth: true
+                        radius: 3
+                        color: Theme.block
+                        border.width: 1
+                        border.color: Theme.brassRing
+                        implicitHeight: sugCol.implicitHeight + 20
+
+                        ColumnLayout {
+                            id: sugCol
+                            x: 12
+                            y: 10
+                            width: parent.width - 24
+                            spacing: 6
+
+                            RowLayout {
+                                spacing: 6
+                                Rectangle {
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    color: Theme.brassDot
+                                }
+                                Text {
+                                    text: "DOCUMENT IMPROVEMENT SUGGESTIONS"
+                                    color: Theme.brass
+                                    font.family: Theme.ui
+                                    font.pixelSize: 9
+                                    font.letterSpacing: 1.4
+                                    font.weight: Font.Medium
+                                }
+                            }
+
+                            Repeater {
+                                model: (screen.summary && screen.summary.suggestions) ? screen.summary.suggestions : []
+                                delegate: Text {
+                                    required property string modelData
+                                    Layout.fillWidth: true
+                                    text: "💡 " + modelData
+                                    color: Theme.inkSoft
+                                    font.family: Theme.body
+                                    font.pixelSize: 12
+                                    lineHeight: 1.35
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+                    }
+
                     // Trace hint
                     Text {
                         visible: screen.summary.summaryType !== "brief"
@@ -543,7 +611,7 @@ Item {
                     anchors.top: parent.top
                     anchors.leftMargin: 16
                     anchors.rightMargin: 16
-                    anchors.topMargin: 52
+                    anchors.topMargin: 16
                     visible: bridge.busy
                 }
             }
