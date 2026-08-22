@@ -725,7 +725,9 @@ class Summarizer:
         content = ""
         try:
             with self._llama_abort_callback_guard(check):
-                stream_resp: Any = llm.create_chat_completion(messages=cast(Any, messages), stream=True, **kwargs)
+                stream_resp: Any = llm.create_chat_completion(
+                    messages=cast(Any, messages), stream=True, **kwargs
+                )
                 for chunk in stream_resp:
                     _raise_if_cancelled(check)
                     choices: Any = chunk.get("choices") if isinstance(chunk, dict) else None
@@ -801,9 +803,7 @@ class Summarizer:
         for i, chunk in enumerate(chunks, 1):
             _raise_if_cancelled(should_cancel)
             pct = 15.0 + (i / total_chunks) * 65.0
-            _report_progress(
-                progress_callback, pct, f"Analyzing section {i} of {total_chunks}…"
-            )
+            _report_progress(progress_callback, pct, f"Analyzing section {i} of {total_chunks}…")
             log_info(f"Summarizing chunk {i}/{total_chunks} ({len(chunk)} chars)")
             partials.append(self._summarize_once(chunk, summary_type, max_tokens))
         combined = "\n\n".join(partials)
@@ -856,9 +856,7 @@ class Summarizer:
         if summary_type not in (SUMMARY_TYPE_DETAILED, SUMMARY_TYPE_STRUCTURED):
             summary_type = SUMMARY_TYPE_DETAILED
 
-        log_info(
-            f"Starting structured summarization: type={summary_type}, input_chars={len(text)}"
-        )
+        log_info(f"Starting structured summarization: type={summary_type}, input_chars={len(text)}")
         _report_progress(progress_callback, 10.0, "Analyzing document structure…")
         try:
             result = self._summarize_structured(
@@ -923,9 +921,7 @@ class Summarizer:
         for idx, (chunk_text, base) in enumerate(chunks_with_offsets, 1):
             _raise_if_cancelled(should_cancel)
             pct = 15.0 + (idx / total_chunks) * 60.0
-            _report_progress(
-                progress_callback, pct, f"Analyzing section {idx} of {total_chunks}…"
-            )
+            _report_progress(progress_callback, pct, f"Analyzing section {idx} of {total_chunks}…")
             parsed = _parse_structured_json(
                 self._chat_json(f"{instruction}\n\nDocument:\n{chunk_text}", max_tokens)
             )

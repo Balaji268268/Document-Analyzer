@@ -329,4 +329,3 @@ def test_build_structured_parses_suggestions() -> None:
     assert summary.suggestions == ["Clarify acronyms in section 2."]
     assert "Improvement Suggestions:" in summary.text
     assert "Clarify acronyms in section 2." in summary.text
-

@@ -96,7 +96,20 @@ def test_supported_extension_set_canonical() -> None:
     assert ".docx" in SUPPORTED_EXTENSION_SET
     assert ".png" in SUPPORTED_EXTENSION_SET
     assert ".jpg" in SUPPORTED_EXTENSION_SET
-    assert {".pdf", ".docx", ".rtf", ".txt", ".md", ".text", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"} == SUPPORTED_EXTENSION_SET
+    assert {
+        ".pdf",
+        ".docx",
+        ".rtf",
+        ".txt",
+        ".md",
+        ".text",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".bmp",
+        ".tiff",
+    } == SUPPORTED_EXTENSION_SET
 
 
 def test_get_document_info_existing(tmp_path: Path) -> None:

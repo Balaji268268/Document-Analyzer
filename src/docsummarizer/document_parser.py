@@ -108,7 +108,10 @@ def extract_from_image(file_path: str) -> str:
         ocr_text = pytesseract.image_to_string(image)
         return str(ocr_text).strip()
     except Exception as exc:
-        if "TesseractNotFoundError" in type(exc).__name__ or "tesseract is not installed" in str(exc).lower():
+        if (
+            "TesseractNotFoundError" in type(exc).__name__
+            or "tesseract is not installed" in str(exc).lower()
+        ):
             raise RuntimeError(
                 "OCR engine (Tesseract) is not installed or not on system PATH. Please install Tesseract OCR to process image files and scanned documents."
             ) from exc
