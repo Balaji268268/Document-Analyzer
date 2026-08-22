@@ -91,4 +91,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.tag }}
         shell: bash
-        run: gh release upload "$TAG" "$DEST" --clobber
+        run: |
+          gh release create "$TAG" --title "Release $TAG" --notes "Automated release $TAG" 2>/dev/null || true
+          gh release upload "$TAG" "$DEST" --clobber
