@@ -1,17 +1,76 @@
-"""Ollama API Client Module for Document-Analyzer.
+"""Ollama API Client & Auto-Tunnel Module for Document-Analyzer.
 
 Provides HTTP client integration to connect with Ollama instances (local
 or remote cloud server) for LLM text generation and structured JSON summarization.
+Automatically manages background Cloudflare tunnels for zero-configuration setup.
 """
 
-# ruff: noqa: S310, PLR0917
+# ruff: noqa: S310, PLR0917, S603, PLW0603
 
 import json
 import os
+import re
+import subprocess
+import threading
+import time
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from .logger import log_debug, log_error, log_info
+
+_TUNNEL_PROCESS: subprocess.Popen[str] | None = None
+_TUNNEL_URL: str | None = None
+
+
+def start_auto_tunnel() -> str | None:
+    """Auto-launch background Cloudflare tunnel to local Ollama if not running.
+
+    Returns:
+        The live public trycloudflare.com URL, or None if tunnel setup failed.
+    """
+    global _TUNNEL_PROCESS
+    if _TUNNEL_URL:
+        return _TUNNEL_URL
+
+    root_dir = Path(__file__).parent.parent.parent
+    cloudflared_bin = root_dir / "cloudflared.exe"
+    bin_path = str(cloudflared_bin) if cloudflared_bin.exists() else "cloudflared"
+
+    try:
+        cmd = [
+            bin_path,
+            "tunnel",
+            "--protocol",
+            "http2",
+            "--url",
+            "http://localhost:11434",
+        ]
+        _TUNNEL_PROCESS = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+
+        def _capture_tunnel_url():
+            global _TUNNEL_URL
+            if _TUNNEL_PROCESS and _TUNNEL_PROCESS.stdout:
+                for line in _TUNNEL_PROCESS.stdout:
+                    match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
+                    if match:
+                        _TUNNEL_URL = match.group(0)
+                        os.environ["OLLAMA_HOST"] = _TUNNEL_URL
+                        log_info(f"Auto-tunnel started: {_TUNNEL_URL}")
+                        break
+
+        thread = threading.Thread(target=_capture_tunnel_url, daemon=True)
+        thread.start()
+
+        start_time = time.time()
+        while not _TUNNEL_URL and time.time() - start_time < 10.0:
+            time.sleep(0.5)
+    except Exception as exc:
+        log_debug(f"Auto-tunnel initialization skipped: {exc!s}")
+
+    return _TUNNEL_URL
 
 
 def get_ollama_host() -> str:
@@ -45,19 +104,7 @@ def query_ollama(
     host: str | None = None,
     timeout: float = 60.0,
 ) -> str:
-    """Send a generation request to the Ollama API.
-
-    Args:
-        prompt: The main user prompt text.
-        system_prompt: Optional system instruction.
-        model: Model name (defaults to OLLAMA_MODEL or llama3).
-        json_mode: If True, instructs Ollama to format output as JSON.
-        host: Ollama server endpoint (defaults to OLLAMA_HOST or http://localhost:11434).
-        timeout: Request timeout in seconds.
-
-    Returns:
-        The generated text response.
-    """
+    """Send a generation request to the Ollama API."""
     target_host = (host or get_ollama_host()).rstrip("/")
     target_model = model or get_ollama_model()
     url = f"{target_host}/api/generate"
