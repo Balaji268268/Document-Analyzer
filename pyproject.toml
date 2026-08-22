@@ -71,6 +71,9 @@ Releases = "https://github.com/Balaji268268/Document-Analyzer/releases"
 [tool.hatch.build.targets.wheel]
 packages = ["src/docsummarizer"]
 
+[tool.hatch.build.targets.wheel.sources]
+"src/docsummarizer" = "docsummarizer"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "src/docsummarizer",

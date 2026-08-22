@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build for (e.g. v1.1.0). Must already exist.'
+        description: 'Tag to build for (e.g. v2.0.0). Must already exist.'
         required: true
         type: string
 
@@ -14,8 +14,6 @@ permissions:
   contents: write
 
 concurrency:
-  # `inputs.tag` is user-controlled but only ever appears as a concurrency
-  # key here; GitHub treats this as opaque, so no shell-injection risk.
   group: release-${{ github.event.inputs.tag || github.ref }}
   cancel-in-progress: false
 
@@ -29,17 +27,14 @@ jobs:
         include:
           - os: ubuntu-latest
             os_label: linux-x64
-            artifact_path: dist/DocSummarizer
-            asset_suffix: linux-x64
+            artifact_dir: dist/DocSummarizer
+            zip_name: DocSummarizer-linux-x64.zip
           - os: windows-latest
             os_label: windows-x64
-            artifact_path: dist/DocSummarizer.exe
-            asset_suffix: windows-x64.exe
+            artifact_dir: dist/DocSummarizer
+            zip_name: DocSummarizer-windows-x64.zip
 
     steps:
-      # Pass the user-controlled tag through `env:` (never directly inline
-      # in `run:`) and validate it matches a semver-like pattern before we
-      # use it anywhere else.
       - name: Resolve and validate tag
         id: tag
         env:
@@ -52,11 +47,11 @@ jobs:
           fi
           echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
@@ -64,27 +59,29 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      # llama-cpp-python has no wheels for many python/OS combos at 0.3.x,
-      # so we accept a source compile here (cmake + MSVC on Windows,
-      # cmake + gcc on Linux). Slow but it's a once-per-release cost.
-      - name: Install package + runtime + PyInstaller
-        run: pip install -e ".[runtime]" pyinstaller
+      - name: Install Linux Qt system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0
 
-      - name: Build executable
-        run: pyinstaller --noconfirm DocSummarizer.spec
+      - name: Install package + runtime + gui + PyInstaller
+        run: pip install -e ".[runtime,gui]" pyinstaller
 
-      - name: Stage artifact
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          SRC: ${{ matrix.artifact_path }}
-          SUFFIX: ${{ matrix.asset_suffix }}
+      - name: Build executable package
+        run: pyinstaller --noconfirm --onedir --windowed --name "DocSummarizer" --paths "src" run.py
+
+      - name: Compress release artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Compress-Archive -Path dist\DocSummarizer -DestinationPath ${{ matrix.zip_name }}
+
+      - name: Compress release artifact (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          mkdir -p staging
-          DEST="staging/DocSummarizer-${TAG}-${SUFFIX}"
-          cp "$SRC" "$DEST"
-          ls -lh "$DEST"
-          echo "DEST=$DEST" >> "$GITHUB_ENV"
+          zip -r ${{ matrix.zip_name }} dist/DocSummarizer
 
       - name: Upload to release
         env:
@@ -93,4 +90,4 @@ jobs:
         shell: bash
         run: |
           gh release create "$TAG" --title "Release $TAG" --notes "Automated release $TAG" 2>/dev/null || true
-          gh release upload "$TAG" "$DEST" --clobber
+          gh release upload "$TAG" "${{ matrix.zip_name }}" --clobber

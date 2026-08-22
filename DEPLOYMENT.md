@@ -1,120 +1,65 @@
-# Deployment Guide — Document-Analyzer
+# Desktop Deployment & Release Guide — DocSummarizer
 
-Complete technical guide for deploying **Document-Analyzer** to **Vercel**, **Render**, **Hugging Face**, and **Desktop Executable Releases**.
+Technical guide for building, packaging, and distributing **DocSummarizer** as a standalone native desktop application for Windows and Linux.
 
 ---
 
-## ⚡ 1. Deploying on Vercel (Python Serverless API)
+## 🖥️ 1. Local Executable Packaging (PyInstaller)
 
-[Vercel](https://vercel.com) supports Python Serverless Functions natively using `@vercel/python`.
+DocSummarizer uses `PyInstaller` with a customized spec configuration to bundle Python, PySide6, QML components, and binary dependencies.
 
-### Step 1: Repository Structure for Vercel
-Ensure your repository includes a `vercel.json` configuration and an `api/index.py` entry point:
-
-```text
-Document-Analyzer/
-├── vercel.json         # Vercel routing & build configuration
-├── api/
-│   └── index.py        # Python serverless function entry point
-├── src/                # Core application source
-└── pyproject.toml      # Package dependencies
-```
-
-### Step 2: Vercel Configuration (`vercel.json`)
-```json
-{
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "api/index.py"
-    }
-  ]
-}
-```
-
-### Step 3: Vercel Python Function (`api/index.py`)
-```python
-from http.server import BaseHTTPRequestHandler
-import json
-import sys
-from pathlib import Path
-
-# Add src layout to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from docsummarizer.document_parser import analyze_document, extract_text
-
-
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        response = {
-            "status": "online",
-            "app": "Document-Analyzer API",
-            "version": "2.0.0",
-            "supported_formats": [".pdf", ".docx", ".rtf", ".txt", ".md", ".png", ".jpg"],
-        }
-        self.wfile.write(json.dumps(response).encode("utf-8"))
-```
-
-### Step 4: Deploy to Vercel
-
-#### Option A: Via Vercel Web Dashboard (Recommended)
-1. Log in to **[vercel.com/new](https://vercel.com/new)** using your GitHub account (`Balaji268268`).
-2. Select your repository: **`Balaji268268/Document-Analyzer`**.
-3. Keep default settings and click **Deploy**.
-4. Vercel will build the deployment and assign a live URL:  
-   👉 **`https://document-analyzer-balaji268268.vercel.app`**
-
-#### Option B: Via Vercel CLI
+### Step 1: Install Build Requirements
 ```bash
-# Install Vercel CLI globally
-npm install -g vercel
-
-# Log in and deploy
-vercel login
-vercel --prod
+pip install -e ".[gui,runtime,dev]" pyinstaller
 ```
 
+### Step 2: Build Desktop Package
+```bash
+pyinstaller --noconfirm --onedir --windowed --name "DocSummarizer" --paths "src" run.py
+```
+
+- **Output Path**: `dist/DocSummarizer/`
+- **Windows Executable**: `dist/DocSummarizer/DocSummarizer.exe`
+- **Linux Executable**: `dist/DocSummarizer/DocSummarizer`
+
 ---
 
-## 🌐 2. Deploying on Render (Web Service)
+## 🚀 2. Automated GitHub Releases (CI/CD)
 
-1. Navigate to **[dashboard.render.com](https://dashboard.render.com)**.
-2. Select **New +** → **Web Service**.
-3. Connect repository `Balaji268268/Document-Analyzer`.
-4. Set Build Command: `pip install -e ".[dev,runtime]"`
-5. Click **Create Web Service**.
+The repository includes an automated GitHub Actions release workflow ([`.github/workflows/release.yml`](file:///.github/workflows/release.yml)).
 
----
+### Triggering an Automated Release
 
-## 🤗 3. Deploying on Hugging Face Spaces
-
-1. Create a new Space at **[huggingface.co/new-space](https://huggingface.co/new-space)**.
-2. Select **Space SDK: Gradio** or **Docker**.
-3. Push your repository:
+1. **Tag your release** with a semver tag:
    ```bash
-   git remote add space https://huggingface.co/spaces/Balaji268268/Document-Analyzer
-   git push space master
+   git tag v2.0.0
+   git push origin v2.0.0
    ```
 
+2. **GitHub Actions** will automatically:
+   - Run tests and static analysis.
+   - Build the standalone executable on Windows and Linux runners.
+   - Create a zip archive (`DocSummarizer-windows-x64.zip` / `DocSummarizer-linux-x64.zip`).
+   - Attach the binary assets directly to your **[GitHub Release Page](https://github.com/Balaji268268/Document-Analyzer/releases)**.
+
 ---
 
-## 💾 4. Desktop Executable Distribution (.exe)
+## 📦 3. PyPI Package Distribution
 
-For desktop distribution without server hosting:
+To allow users to install DocSummarizer directly via `pip`:
 
 ```bash
-# Build single-file desktop executable
-pyinstaller DocSummarizer.spec
+# Build wheel and source distribution
+python -m pip install build
+python -m build
+
+# Publish to PyPI
+python -m pip install twine
+python -m twine upload dist/*
 ```
 
-The compiled binary will be placed in `dist/DocSummarizer.exe` (Windows) or `dist/DocSummarizer` (Linux).
+Users can then launch the app on any OS with:
+```bash
+pip install docsummarizer
+docsummarizer
+```

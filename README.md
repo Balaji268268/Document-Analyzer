@@ -1,14 +1,3 @@
----
-title: DocSummarizer QML Desktop
-emoji: 🖥️
-colorFrom: blue
-colorTo: purple
-sdk: gradio
-sdk_version: 4.28.3
-app_file: app.py
-pinned: false
----
-
 <div align="center">
 
 # DocSummarizer — Document Summary Assistant
