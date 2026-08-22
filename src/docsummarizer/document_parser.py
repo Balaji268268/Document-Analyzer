@@ -9,7 +9,9 @@ below; dialog filters (`SUPPORTED_EXTENSIONS`), the extractor dispatch
 in `extract_text`, and CLI directory scans all derive from it.
 """
 
+import io
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict
 
@@ -26,7 +28,7 @@ class DocumentInfo(TypedDict):
 
 
 def extract_from_pdf(file_path: str) -> str:
-    """Extract text from a PDF file."""
+    """Extract text from a PDF file, with OCR fallback for scanned pages."""
     from pypdf import PdfReader
 
     reader = PdfReader(file_path)
@@ -37,7 +39,27 @@ def extract_from_pdf(file_path: str) -> str:
         if page_text:
             text_parts.append(page_text)
 
-    return "\n\n".join(text_parts)
+    extracted = "\n\n".join(text_parts).strip()
+    if extracted:
+        return extracted
+
+    # Scanned PDF fallback: if pypdf returns no text, attempt OCR via page images
+    with suppress(Exception):
+        import pytesseract
+        from PIL import Image
+
+        ocr_parts = []
+        for page in reader.pages:
+            for img in page.images:
+                with suppress(Exception):
+                    pil_img = Image.open(io.BytesIO(img.data))
+                    ocr_text = pytesseract.image_to_string(pil_img)
+                    if ocr_text.strip():
+                        ocr_parts.append(ocr_text.strip())
+        if ocr_parts:
+            return "\n\n".join(ocr_parts)
+
+    return extracted
 
 
 def extract_from_docx(file_path: str) -> str:
@@ -76,6 +98,23 @@ def extract_from_txt(file_path: str) -> str:
     return raw_data.decode(encoding, errors="replace")
 
 
+def extract_from_image(file_path: str) -> str:
+    """Extract text from an image file using PIL and Tesseract OCR."""
+    import pytesseract
+    from PIL import Image
+
+    try:
+        image = Image.open(file_path)
+        ocr_text = pytesseract.image_to_string(image)
+        return str(ocr_text).strip()
+    except Exception as exc:
+        if "TesseractNotFoundError" in type(exc).__name__ or "tesseract is not installed" in str(exc).lower():
+            raise RuntimeError(
+                "OCR engine (Tesseract) is not installed or not on system PATH. Please install Tesseract OCR to process image files and scanned documents."
+            ) from exc
+        raise
+
+
 _EXTRACTORS: dict[str, Callable[[str], str]] = {
     ".pdf": extract_from_pdf,
     ".docx": extract_from_docx,
@@ -83,6 +122,12 @@ _EXTRACTORS: dict[str, Callable[[str], str]] = {
     ".txt": extract_from_txt,
     ".md": extract_from_txt,
     ".text": extract_from_txt,
+    ".png": extract_from_image,
+    ".jpg": extract_from_image,
+    ".jpeg": extract_from_image,
+    ".webp": extract_from_image,
+    ".bmp": extract_from_image,
+    ".tiff": extract_from_image,
 }
 
 # Canonical set of supported extensions. Single source of truth — the
@@ -173,6 +218,12 @@ _PARSER_LABELS: dict[str, str] = {
     ".txt": "chardet",
     ".md": "chardet",
     ".text": "chardet",
+    ".png": "tesseract-ocr",
+    ".jpg": "tesseract-ocr",
+    ".jpeg": "tesseract-ocr",
+    ".webp": "tesseract-ocr",
+    ".bmp": "tesseract-ocr",
+    ".tiff": "tesseract-ocr",
 }
 
 # Extensions whose encoding we can meaningfully detect (chardet on raw bytes).
@@ -225,9 +276,10 @@ def analyze_document(file_path: str, text: str | None = None) -> DocumentStats:
 
 # Dialog filter list, derived from SUPPORTED_EXTENSION_SET so it can't drift.
 SUPPORTED_EXTENSIONS = [
-    ("All Supported", "*.pdf *.docx *.rtf *.txt *.md"),
+    ("All Supported", "*.pdf *.docx *.rtf *.txt *.md *.png *.jpg *.jpeg *.webp *.bmp *.tiff"),
     ("PDF Files", "*.pdf"),
     ("Word Documents", "*.docx"),
+    ("Image Files (OCR)", "*.png *.jpg *.jpeg *.webp *.bmp *.tiff"),
     ("RTF Files", "*.rtf"),
     ("Text Files", "*.txt *.md"),
 ]
