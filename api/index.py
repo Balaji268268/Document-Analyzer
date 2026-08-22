@@ -18,7 +18,9 @@ from docsummarizer.model_manager import (
     SUMMARY_TYPE_DETAILED,
     SUMMARY_TYPE_STRUCTURED,
     _build_structured,
+    _parse_structured_json,
 )
+from docsummarizer.ollama_client import is_ollama_available, query_ollama
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -417,7 +419,30 @@ class handler(BaseHTTPRequestHandler):
 
             # Analytics & Summary Construction
             stats = analyze_document(file_name, extracted_text)
-            summary_obj = _build_structured(extracted_text, summary_type=summary_type)
+
+            summary_obj = None
+            if is_ollama_available():
+                try:
+                    prompt = (
+                        "Summarize the document below into JSON format: "
+                        '{"lead": "<one-sentence overview>", "points": [{"text": "<key point>", '
+                        '"quote": "<verbatim supporting sentence>"}], "suggestions": ["<suggestion>"]}\n\n'
+                        f"Document:\n{extracted_text[:4000]}"
+                    )
+                    ollama_resp = query_ollama(prompt, json_mode=True, timeout=30.0)
+                    parsed = _parse_structured_json(ollama_resp)
+                    if parsed:
+                        summary_obj = _build_structured(parsed, summary_type, extracted_text, 0)
+                except Exception:
+                    summary_obj = None
+
+            if summary_obj is None:
+                summary_obj = _build_structured(
+                    {"lead": f"Summary of {file_name}", "points": []},
+                    summary_type,
+                    extracted_text,
+                    0,
+                )
 
             points_data = []
             for pt in summary_obj.points:
