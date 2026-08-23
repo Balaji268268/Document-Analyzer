@@ -362,9 +362,11 @@ class ConsoleBridge(QObject):
         self._set_busy(False)
         self._set_status(status, color)
 
-    def _get_summarizer(self) -> Summarizer | None:
+    def _get_summarizer(self) -> Summarizer:
         self._mutex.lock()
         try:
+            if self._summarizer is None:
+                self._summarizer = Summarizer(get_model_path())
             return self._summarizer
         finally:
             self._mutex.unlock()
@@ -495,6 +497,7 @@ class ConsoleBridge(QObject):
             else:
                 self._extracted_text = text
                 self._finish("Text extracted")
+                self.summarize()
             self.docChanged.emit()
 
         self._run(work, done)

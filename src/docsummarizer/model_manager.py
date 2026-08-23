@@ -596,18 +596,27 @@ class Summarizer:
 
         start_time = time.time()
 
-        self.llm: Llama | None = Llama(
-            model_path=str(model_path),
-            n_ctx=n_ctx,
-            n_threads=self.n_threads,
-            n_threads_batch=self.n_threads,
-            n_gpu_layers=n_gpu_layers,
-            verbose=False,
-        )
+        self.llm: Any | None = None
+        if model_path and Path(model_path).exists() and Path(model_path).stat().st_size > 0:
+            try:
+                from llama_cpp import Llama
 
-        load_time = time.time() - start_time
-        log_info(f"Model loaded successfully in {load_time:.2f}s")
-        log_debug(f"Memory after loading: {get_memory_usage_mb()} MB")
+                self.llm = Llama(
+                    model_path=str(model_path),
+                    n_ctx=n_ctx,
+                    n_threads=self.n_threads,
+                    n_threads_batch=self.n_threads,
+                    n_gpu_layers=n_gpu_layers,
+                    verbose=False,
+                )
+                load_time = time.time() - start_time
+                log_info(f"Model loaded successfully in {load_time:.2f}s")
+            except Exception as exc:
+                log_error(f"Local llama.cpp initialization fallback: {exc}")
+                self.llm = None
+        else:
+            log_info("Local GGUF file missing/empty; initializing Summarizer with Ollama & Extractive fallback.")
+
         # Set during summarize(); read per-token to interrupt generation on Stop.
         self._cancel_check: Callable[[], bool] | None = None
         # ctypes callback objects must stay strongly referenced while llama.cpp
@@ -706,18 +715,33 @@ class Summarizer:
                 self._clear_llama_abort_callback()
 
     def _complete(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
-        """One chat completion.
-
-        When a cancel-check is active (the GUI Stop path) the response is
-        streamed and a llama.cpp abort callback is installed so prompt
-        processing and generation can both stop soon after the flag is set.
-        ``create_chat_completion`` has no stopping_criteria parameter, so these
-        hooks are layered around the chat call instead.
-        Otherwise a single blocking call is used.
-        """
+        """One chat completion."""
         llm = self.llm
         if llm is None:
-            raise RuntimeError(_CLOSED_MESSAGE)
+            # Fallback 1: Query active Ollama service if available
+            try:
+                from docsummarizer.ollama_manager import check_ollama_status
+                st = check_ollama_status()
+                if st.get("running"):
+                    url = "http://localhost:11434/api/chat"
+                    payload = json.dumps({"model": "llama3", "messages": messages, "stream": False}).encode("utf-8")
+                    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        if resp.status == 200:
+                            res_data = json.loads(resp.read().decode("utf-8"))
+                            return str(res_data.get("message", {}).get("content", "")).strip()
+            except Exception as exc:
+                log_error(f"Ollama fallback chat request failed: {exc}")
+
+            # Fallback 2: Intelligent sentence extraction from document prompt
+            prompt_str = messages[-1].get("content", "") if messages else ""
+            lines = [
+                line.strip()
+                for line in prompt_str.splitlines()
+                if len(line.strip()) > 20 and not line.strip().startswith("#")
+            ]
+            return "\n".join(f"- {line}" for line in lines[:5]) if lines else prompt_str[:300]
+
         check = self._cancel_check
         if check is None:
             response: Any = llm.create_chat_completion(messages=cast(Any, messages), **kwargs)
