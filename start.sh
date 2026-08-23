@@ -5,6 +5,13 @@ export DISPLAY=:99
 export QT_QPA_PLATFORM=offscreen
 export QT_QUICK_BACKEND=software
 
+# Ensure noVNC root defaults to vnc.html so visiting '/' loads the web app interface
+if [ -f "/usr/share/novnc/vnc.html" ]; then
+    cp /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
+elif [ -f "/usr/share/novnc/vnc_lite.html" ]; then
+    cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html 2>/dev/null || true
+fi
+
 echo "Starting virtual display Xvfb on :99..."
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 Xvfb :99 -screen 0 1280x800x24 &
