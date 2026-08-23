@@ -3,7 +3,7 @@
 Provides comprehensive, non-blocking environment management for Ollama:
 - Detection of executable, HTTP service status (11434), and available models.
 - Automatic background service starting.
-- Automatic download of official OllamaSetup.exe installer.
+- Automatic download and silent background installation of Ollama.
 - Model pulling and progress streaming.
 """
 
@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -48,6 +49,11 @@ def find_ollama_executable() -> Path | None:
         candidate_pf = Path(program_files) / "Ollama" / "ollama.exe"
         if candidate_pf.exists():
             return candidate_pf
+    else:
+        candidates = [Path("/usr/local/bin/ollama"), Path("/usr/bin/ollama")]
+        for cand in candidates:
+            if cand.exists():
+                return cand
 
     return None
 
@@ -167,10 +173,24 @@ def start_ollama_service() -> bool:
         return True
 
 
-def download_and_install_ollama(
+def download_and_install_ollama(  # noqa: PLR0912, PLR0915
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bool, str]:
-    """Download official Ollama installer and launch it."""
+    """Download official Ollama installer and execute silent automated installation."""
+    if sys.platform != "win32":
+        if progress_callback:
+            progress_callback(20.0, "Executing Linux Ollama installer script...")
+        try:
+            res = subprocess.run(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"], capture_output=True, text=True, check=False)  # noqa: S607
+        except Exception as exc:
+            return False, f"Linux installation error: {exc}"
+        else:
+            if res.returncode == 0:
+                if progress_callback:
+                    progress_callback(100.0, "Ollama installed successfully!")
+                return True, "Ollama installed successfully."
+            return False, f"Installation script failed: {res.stderr}"
+
     if progress_callback:
         progress_callback(10.0, "Connecting to Ollama download server...")
 
@@ -180,7 +200,7 @@ def download_and_install_ollama(
 
     try:
         req = urllib.request.Request(OLLAMA_INSTALLER_URL, headers={"User-Agent": "DocSummarizer"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             block_size = 1024 * 64
@@ -193,7 +213,7 @@ def download_and_install_ollama(
                     out_file.write(chunk)
                     downloaded += len(chunk)
                     if total_size > 0 and progress_callback:
-                        pct = 10.0 + (downloaded / total_size) * 70.0
+                        pct = 10.0 + (downloaded / total_size) * 75.0
                         mb_done = downloaded / (1024 * 1024)
                         mb_total = total_size / (1024 * 1024)
                         progress_callback(
@@ -201,17 +221,31 @@ def download_and_install_ollama(
                         )
 
         if progress_callback:
-            progress_callback(85.0, "Launching Ollama installer...")
+            progress_callback(88.0, "Running automated silent Ollama setup...")
 
-        log_info(f"Launching installer executable: {installer_path}")
-        subprocess.Popen([str(installer_path)])  # noqa: S603
+        log_info(f"Launching silent installer executable: {installer_path}")
+        proc = subprocess.Popen([str(installer_path), "/S"])  # noqa: S603
+        proc.wait()
+
+        if progress_callback:
+            progress_callback(95.0, "Verifying Ollama installation & starting service...")
+
+        for _ in range(10):
+            if find_ollama_executable():
+                start_ollama_service()
+                time.sleep(2)
+                if progress_callback:
+                    progress_callback(100.0, "Ollama installed & service active!")
+                return True, "Ollama installed and background service started."
+            time.sleep(1)
+
     except Exception as exc:
         log_error(f"Ollama download/install failed: {exc}")
         return False, f"Download failed: {exc}"
-    else:
-        if progress_callback:
-            progress_callback(100.0, "Installer launched. Please complete installation wizard.")
-        return True, "Installer launched successfully."
+
+    if progress_callback:
+        progress_callback(100.0, "Installer completed. Please click Check Again.")
+    return True, "Installer executed successfully."
 
 
 def pull_ollama_model(  # noqa: PLR0912
