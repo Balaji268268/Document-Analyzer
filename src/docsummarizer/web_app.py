@@ -23,10 +23,12 @@ PACKAGE_ROOT = CURRENT_DIR.parent
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-from docsummarizer.document_parser import extract_text_from_file  # noqa: E402
+from docsummarizer.document_parser import extract_text  # noqa: E402
 from docsummarizer.logger import log_error, log_info  # noqa: E402
-from docsummarizer.provenance import compute_provenance  # noqa: E402
-from docsummarizer.structured_summary import generate_structured_summary  # noqa: E402
+from docsummarizer.provenance import locate_quote, split_sentences  # noqa: E402
+from docsummarizer.structured_summary import (  # type: ignore[import-not-found]  # noqa: E402
+    generate_structured_summary,
+)
 
 WEB_STATIC_DIR = CURRENT_DIR / "web"
 
@@ -40,15 +42,17 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
     """HTTP Request Handler serving static web assets and REST APIs."""
 
-    def __init__(self, *args: list[object], **kwargs: dict[str, object]) -> None:
-        super().__init__(*args, directory=str(WEB_STATIC_DIR), **kwargs)
+    def translate_path(self, path: str) -> str:
+        """Translate URL path to web static directory files."""
+        parsed = urlparse(path)
+        rel_path = parsed.path.lstrip("/")
+        if not rel_path or rel_path == "index.html":
+            return str(WEB_STATIC_DIR / "index.html")
+        return str(WEB_STATIC_DIR / rel_path)
 
     def do_GET(self) -> None:
         """Handle GET requests for web pages and static assets."""
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/index.html"):
-            self._serve_file(WEB_STATIC_DIR / "index.html", "text/html; charset=utf-8")
-            return
         if parsed.path == "/api/health":
             self._send_json({"status": "healthy", "service": "DocSummarizer Web API"})
             return
@@ -88,7 +92,19 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             summary = generate_structured_summary(text, summary_type=summary_type)
 
             # Compute sentence grounding citations
-            provenance = compute_provenance(text, summary.to_text())
+            sentences = split_sentences(text)
+            provenance: list[dict[str, object]] = []
+            if summary.points:
+                for pt in summary.points:
+                    span = locate_quote(pt.text, text, sentences)
+                    if span:
+                        provenance.append(
+                            {
+                                "summary_sentence": pt.text,
+                                "source_sentence": span.quote,
+                                "confidence": span.score,
+                            }
+                        )
 
             response_data = {
                 "success": True,
@@ -124,10 +140,10 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             # Extract text using document parser
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
-                tmp.write(content_bytes)
+                tmp.write(bytes(content_bytes))
                 tmp_path = Path(tmp.name)
 
-            extracted_text = extract_text_from_file(tmp_path)
+            extracted_text = extract_text(str(tmp_path))
             tmp_path.unlink(missing_ok=True)
 
             self._send_json(
@@ -161,7 +177,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 def run_web_server(port: int = 8080, host: str = "0.0.0.0") -> None:  # noqa: S104
     """Run the threaded HTTP web server."""
     WEB_STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    server_address = (host, port)
+    server_address: tuple[str, int] = (host, port)
     httpd = ThreadedHTTPServer(server_address, DocSummarizerWebHandler)
     log_info(f"DocSummarizer Web Server listening on http://{host}:{port}")
     print(f"🚀 DocSummarizer Web Server running on http://{host}:{port}")
