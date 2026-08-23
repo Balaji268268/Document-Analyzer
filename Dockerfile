@@ -4,11 +4,12 @@ FROM python:3.11-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 ENV PYTHONUNBUFFERED=1
-ENV QT_QPA_PLATFORM=xcb
+ENV QT_QPA_PLATFORM=offscreen
+ENV QT_QUICK_BACKEND=software
 
 WORKDIR /app
 
-# Install system dependencies: Linux Qt libraries, procps, Xvfb, Openbox, x11vnc, noVNC
+# Install all Linux Qt/PySide6 dependencies, procps, Xvfb, Openbox, x11vnc, noVNC
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     xvfb \
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     libgl1 \
     libxkbcommon0 \
+    libxkbcommon-x11-0 \
     libdbus-1-3 \
     libxcb-cursor0 \
     libxcb-icccm4 \
@@ -29,6 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-shape0 \
     libxcb-xinerama0 \
     libxcb-xfixes0 \
+    libxcb-util1 \
+    libx11-xcb1 \
+    libsm6 \
+    libice6 \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/*
