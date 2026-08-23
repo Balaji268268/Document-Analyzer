@@ -153,7 +153,7 @@ Item {
                 }
                 ConsoleButton {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Select Container File"
+                    text: "Select File"
                     primary: true
                     onClicked: openDialog.open()
                 }
@@ -164,14 +164,13 @@ Item {
                         width: 6
                         height: 6
                         radius: 3
-                        color: Theme.accent
+                        color: Theme.brassDot
                     }
                     Text {
-                        text: "⚡ For zero-lag native PC file picker, open http://localhost:8080 in your browser!"
-                        color: Theme.accent
+                        text: "Processed entirely on your machine — files never leave this device."
+                        color: Theme.faint
                         font.family: Theme.body
                         font.pixelSize: 12
-                        font.weight: Font.DemiBold
                     }
                 }
             }
