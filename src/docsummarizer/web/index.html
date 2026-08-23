@@ -480,10 +480,10 @@
       <!-- File Upload Zone -->
       <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
         <div class="dropzone-icon">📥</div>
-        <div class="dropzone-text">
-          Drag & Drop document here or <span>Browse File</span>
+        <div class="dropzone-text" id="dropzoneText">
+          Drag & Drop document here or <span>Browse Local File</span>
         </div>
-        <input type="file" id="fileInput" accept=".pdf,.docx,.rtf,.txt" style="display: none;" onchange="handleFileSelect(event)" />
+        <input type="file" id="fileInput" accept=".pdf,.docx,.rtf,.txt,.md" style="display: none;" onchange="handleFileSelect(event)" />
       </div>
 
       <!-- Direct Text Area -->
@@ -577,20 +577,52 @@
       }
     }
 
+    // Enable native Drag & Drop from Local PC File System
+    window.addEventListener('DOMContentLoaded', () => {
+      const dropzone = document.getElementById('dropzone');
+      if (!dropzone) return;
+
+      dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      });
+      dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+      });
+      dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          processLocalFile(e.dataTransfer.files[0]);
+        }
+      });
+    });
+
     function handleFileSelect(event) {
       const file = event.target.files[0];
-      if (!file) return;
+      if (file) {
+        processLocalFile(file);
+      }
+    }
+
+    function processLocalFile(file) {
+      const dropzoneText = document.getElementById('dropzoneText');
+      if (dropzoneText) {
+        dropzoneText.innerHTML = `Local File Loaded: <span>${escapeHtml(file.name)}</span> (${Math.round(file.size / 1024)} KB)`;
+      }
 
       const reader = new FileReader();
       reader.onload = function(e) {
-        if (file.name.endsWith('.txt')) {
+        if (file.name.endsWith('.txt') || file.name.endsWith('.md')) {
           document.getElementById('textInput').value = e.target.result;
+          updateProgress(100, `Local document '${file.name}' loaded successfully.`);
+          generateSummary();
         } else {
           parseFileApi(file.name, e.target.result);
         }
       };
-      
-      if (file.name.endsWith('.txt')) {
+
+      if (file.name.endsWith('.txt') || file.name.endsWith('.md')) {
         reader.readAsText(file);
       } else {
         reader.readAsArrayBuffer(file);
@@ -598,7 +630,7 @@
     }
 
     async function parseFileApi(filename, arrayBuffer) {
-      updateProgress(25, `[1/3] Parsing document file '${filename}'...`);
+      updateProgress(25, `[1/3] Parsing local file '${filename}'...`);
 
       try {
         const bytes = Array.from(new Uint8Array(arrayBuffer));
@@ -612,15 +644,16 @@
 
         const data = await res.json();
         if (data.extracted_text) {
-          updateProgress(100, `[3/3] Document '${filename}' loaded successfully (${data.char_count} chars).`);
+          updateProgress(100, `[3/3] Local document '${filename}' parsed successfully (${data.char_count} chars).`);
           document.getElementById('textInput').value = data.extracted_text;
+          generateSummary();
         } else {
           updateProgress(0, '');
-          alert('Failed to parse file: ' + (data.error || 'Unknown error'));
+          alert('Failed to parse local file: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
         updateProgress(0, '');
-        alert('File upload error: ' + err);
+        alert('Local file upload error: ' + err);
       }
     }
 
