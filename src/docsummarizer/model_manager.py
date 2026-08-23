@@ -732,7 +732,10 @@ class Summarizer:
             try:
                 import urllib.request
 
-                from docsummarizer.ollama_manager import check_ollama_status, get_available_ollama_models
+                from docsummarizer.ollama_manager import (
+                    check_ollama_status,
+                    get_available_ollama_models,
+                )
 
                 st = check_ollama_status()
                 if st.get("running"):
