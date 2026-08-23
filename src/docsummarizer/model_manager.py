@@ -732,13 +732,15 @@ class Summarizer:
             try:
                 import urllib.request
 
-                from docsummarizer.ollama_manager import check_ollama_status
+                from docsummarizer.ollama_manager import check_ollama_status, get_available_ollama_models
 
                 st = check_ollama_status()
                 if st.get("running"):
+                    avail = get_available_ollama_models()
+                    ollama_model = avail[0] if avail else "llama3"
                     url = "http://localhost:11434/api/chat"
                     payload = json.dumps(
-                        {"model": "llama3", "messages": messages, "stream": False}
+                        {"model": ollama_model, "messages": messages, "stream": False}
                     ).encode("utf-8")
                     req = urllib.request.Request(
                         url, data=payload, headers={"Content-Type": "application/json"}
