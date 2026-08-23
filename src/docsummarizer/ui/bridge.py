@@ -220,11 +220,14 @@ class ConsoleBridge(QObject):
         from PySide6.QtGui import QDesktopServices
 
         target = folder_path.strip()
+        docs_dir = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.DocumentsLocation
+        )
         if not target:
-            target = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-        path_obj = Path(_clean_file_url(target))
+            target = docs_dir
+        path_obj = Path(_url_to_path(target))
         if not path_obj.exists():
-            path_obj = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+            path_obj = Path(docs_dir)
         if path_obj.is_file():
             path_obj = path_obj.parent
         log_info(f"Opening local folder: {path_obj}")

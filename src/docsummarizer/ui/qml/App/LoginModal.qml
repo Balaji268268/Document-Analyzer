@@ -7,8 +7,8 @@ import App
 Rectangle {
     id: modal
     anchors.fill: parent
-    color: "#D90B0D13"  # semi-transparent dark backdrop
-    z: 999  # keep above all screen content
+    color: "#D90B0D13"  // semi-transparent dark backdrop
+    z: 999  // keep above all screen content
 
     property string errorMessage: ""
 

@@ -464,7 +464,7 @@ def test_bridge_reset_session(qapp: QGuiApplication, tmp_path) -> None:
 
     bridge.resetSession()
     assert bridge.hasDoc is False
-    assert bridge.currentFile == ""
+    assert bridge.currentFileName == ""
     assert bridge.extractedText == ""
 
 
