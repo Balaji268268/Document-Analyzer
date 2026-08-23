@@ -7,6 +7,8 @@ export QSG_RENDER_LOOP=basic
 export QSG_RENDERER_BATCH_NODE_SIZE=64
 export DOCSUMMARIZER_DATA_DIR=/tmp/docsummarizer
 mkdir -p /tmp/docsummarizer/logs
+mkdir -p "$HOME/Desktop" "$HOME/Downloads" "$HOME/Documents" "$HOME/Music" "$HOME/Pictures" "$HOME/Videos" 2>/dev/null || true
+mkdir -p /root/Desktop /root/Downloads /root/Documents /root/Music /root/Pictures /root/Videos 2>/dev/null || true
 
 # 1. Start Ollama service in the background if installed
 if command -v ollama >/dev/null 2>&1; then
