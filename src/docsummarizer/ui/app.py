@@ -71,6 +71,14 @@ def _install_excepthook(bridge: ConsoleBridge) -> None:
 def main() -> int:
     """Launch the DocSummarizer console UI."""
     log_startup()
+    # Perform startup Python dependency check & auto-resolution
+    try:
+        from docsummarizer import dependency_manager
+        dependency_manager.auto_install_missing_dependencies()
+    except Exception as exc:
+        from docsummarizer.logger import log_error
+        log_error(f"Startup dependency resolution warning: {exc}")
+
     app = QGuiApplication(sys.argv)
     app.setApplicationName("DocSummarizer")
     app.setOrganizationName("DocSummarizer")
@@ -79,6 +87,8 @@ def main() -> int:
     _engine, bridge = create_engine(app)
     _install_excepthook(bridge)
     bridge.checkModel()
+    bridge.checkDependencies()
+    bridge.checkOllamaStatus()
     return app.exec()
 
 

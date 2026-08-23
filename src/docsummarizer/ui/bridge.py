@@ -21,7 +21,7 @@ from typing import Any
 
 from PySide6.QtCore import Property, QMutex, QObject, QThreadPool, QUrl, Signal, Slot
 
-from docsummarizer import document_parser
+from docsummarizer import dependency_manager, document_parser, ollama_manager
 from docsummarizer.io_helpers import write_summary_docx, write_summary_txt
 from docsummarizer.logger import log_debug, log_error, log_info
 from docsummarizer.model_manager import (
@@ -121,6 +121,8 @@ class ConsoleBridge(QObject):
     reloadArmedChanged = Signal()
     downloadChanged = Signal()
     summaryProgressChanged = Signal()
+    ollamaStatusChanged = Signal()
+    dependenciesStatusChanged = Signal()
 
     # One-shot events.
     progress = Signal(float, str)
@@ -162,6 +164,13 @@ class ConsoleBridge(QObject):
         self._batch_rows: list[dict[str, Any]] = []
         self._last_summary: StructuredSummary | None = None
         self._cancel_requested = False
+        self._ollama_status_code = "CHECKING"
+        self._ollama_status_message = "Checking Ollama..."
+        self._ollama_model_name = "llama3"
+        self._ollama_busy = False
+        self._ollama_progress_pct = 0.0
+        self._dependencies_ok = True
+        self._missing_dependencies: list[dict[str, str]] = []
         # Hold running workers: QThreadPool.start() does not keep a Python
         # reference, so without this the Worker (and its signals) is GC'd before
         # run() finishes and the done/failed signal is silently lost.
@@ -719,6 +728,157 @@ class ConsoleBridge(QObject):
     def shutdown(self) -> None:
         log_info("UI shutting down; releasing model")
         self._set_summarizer(None)
+
+    # -- Ollama & Dependency management properties & slots ------------------- #
+    def _get_ollama_status_code(self) -> str:
+        return self._ollama_status_code
+
+    ollamaStatusCode = Property(str, _get_ollama_status_code, notify=ollamaStatusChanged)
+
+    def _get_ollama_status_message(self) -> str:
+        return self._ollama_status_message
+
+    ollamaStatusMessage = Property(str, _get_ollama_status_message, notify=ollamaStatusChanged)
+
+    def _get_ollama_model_name(self) -> str:
+        return self._ollama_model_name
+
+    ollamaModelName = Property(str, _get_ollama_model_name, notify=ollamaStatusChanged)
+
+    def _get_ollama_busy(self) -> bool:
+        return self._ollama_busy
+
+    ollamaBusy = Property(bool, _get_ollama_busy, notify=ollamaStatusChanged)
+
+    def _get_ollama_progress_percent(self) -> float:
+        return self._ollama_progress_pct
+
+    ollamaProgressPercent = Property(float, _get_ollama_progress_percent, notify=ollamaStatusChanged)
+
+    def _get_dependencies_ok(self) -> bool:
+        return self._dependencies_ok
+
+    dependenciesOk = Property(bool, _get_dependencies_ok, notify=dependenciesStatusChanged)
+
+    def _get_missing_dependencies(self) -> list[dict[str, str]]:
+        return self._missing_dependencies
+
+    missingDependencies = Property(list, _get_missing_dependencies, notify=dependenciesStatusChanged)
+
+    @Slot()
+    def checkOllamaStatus(self) -> None:
+        """Check status of Ollama executable, background service, and models."""
+        def work() -> dict[str, Any]:
+            return ollama_manager.check_ollama_status(self._ollama_model_name)
+
+        def done(res: dict[str, Any]) -> None:
+            self._ollama_status_code = str(res.get("code", "NOT_INSTALLED"))
+            self._ollama_status_message = str(res.get("message", ""))
+            self.ollamaStatusChanged.emit()
+
+        self._run(work, done)
+
+    @Slot()
+    def startOllamaService(self) -> None:
+        """Start the background Ollama service process."""
+        self._ollama_busy = True
+        self.ollamaStatusChanged.emit()
+
+        def work() -> bool:
+            return ollama_manager.start_ollama_service()
+
+        def done(ok: bool) -> None:
+            self._ollama_busy = False
+            if ok:
+                self.toast.emit("Ollama service started")
+            else:
+                self.toast.emit("Could not start Ollama service")
+            self.checkOllamaStatus()
+
+        self._run(work, done)
+
+    @Slot()
+    def installOllamaNow(self) -> None:
+        """Download official OllamaSetup.exe and launch installation."""
+        self._ollama_busy = True
+        self._ollama_progress_pct = 0.0
+        self.ollamaStatusChanged.emit()
+
+        def prog(pct: float, msg: str) -> None:
+            self._ollama_progress_pct = pct
+            self._ollama_status_message = msg
+            self.ollamaStatusChanged.emit()
+
+        def work() -> tuple[bool, str]:
+            return ollama_manager.download_and_install_ollama(prog)
+
+        def done(res: tuple[bool, str]) -> None:
+            ok, msg = res
+            self._ollama_busy = False
+            if ok:
+                self.toast.emit("Ollama installer launched")
+            else:
+                self.toast.emit(f"Installer error: {msg}")
+            self.checkOllamaStatus()
+
+        self._run(work, done)
+
+    @Slot(str)
+    def pullOllamaModel(self, model_name: str = "") -> None:
+        """Download requested AI model into Ollama."""
+        target = model_name or self._ollama_model_name
+        self._ollama_busy = True
+        self._ollama_progress_pct = 0.0
+        self.ollamaStatusChanged.emit()
+
+        def prog(pct: float, msg: str) -> None:
+            self._ollama_progress_pct = pct
+            self._ollama_status_message = msg
+            self.ollamaStatusChanged.emit()
+
+        def work() -> tuple[bool, str]:
+            return ollama_manager.pull_ollama_model(target, prog)
+
+        def done(res: tuple[bool, str]) -> None:
+            ok, msg = res
+            self._ollama_busy = False
+            if ok:
+                self.toast.emit(f"Model '{target}' ready")
+            else:
+                self.toast.emit(f"Model download failed: {msg}")
+            self.checkOllamaStatus()
+
+        self._run(work, done)
+
+    @Slot()
+    def checkDependencies(self) -> None:
+        """Check for missing or unimportable Python packages."""
+        missing = dependency_manager.check_missing_dependencies()
+        self._missing_dependencies = missing
+        self._dependencies_ok = len(missing) == 0
+        self.dependenciesStatusChanged.emit()
+
+    @Slot()
+    def installMissingDependencies(self) -> None:
+        """Automatically install missing Python packages using pip."""
+        def prog(pct: float, msg: str) -> None:
+            self.progress.emit(pct, msg)
+
+        def work() -> tuple[bool, list[dict[str, str]]]:
+            return dependency_manager.auto_install_missing_dependencies(prog)
+
+        def done(res: tuple[bool, list[dict[str, str]]]) -> None:
+            all_ok, failed = res
+            self._dependencies_ok = all_ok
+            self._missing_dependencies = failed
+            self.dependenciesStatusChanged.emit()
+            if all_ok:
+                self.toast.emit("Dependencies successfully installed!")
+            else:
+                self.toast.emit(f"{len(failed)} package(s) failed to install")
+
+        self._run(work, done)
+
 
 
 def _auto_threads() -> int:

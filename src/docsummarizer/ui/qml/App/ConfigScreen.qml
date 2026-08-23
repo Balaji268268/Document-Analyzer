@@ -325,6 +325,73 @@ Item {
                         }
                     }
                 }
+
+                // (5) OLLAMA ENVIRONMENT & SERVICE --------------------------- //
+                Rectangle {
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: ollamaCardCol.implicitHeight + 36
+                    radius: 4
+                    color: Theme.block
+                    border.width: 1
+                    border.color: bridge.ollamaStatusCode === "READY" ? "#10B981" : Theme.line
+                    ColumnLayout {
+                        id: ollamaCardCol
+                        x: 18
+                        y: 18
+                        width: parent.width - 36
+                        spacing: 10
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: "OLLAMA ENVIRONMENT SERVICE"
+                                color: Theme.label
+                                font.family: Theme.ui
+                                font.pixelSize: 10
+                                font.letterSpacing: 2.2
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: bridge.ollamaStatusCode === "READY" ? "🟢 READY" : (bridge.ollamaStatusCode === "STOPPED" ? "🟡 STOPPED" : (bridge.ollamaStatusCode === "MODEL_MISSING" ? "🟡 MODEL MISSING" : "🔴 NOT INSTALLED"))
+                                color: bridge.ollamaStatusCode === "READY" ? "#10B981" : (bridge.ollamaStatusCode === "STOPPED" || bridge.ollamaStatusCode === "MODEL_MISSING" ? "#F59E0B" : "#EF4444")
+                                font.family: Theme.mono
+                                font.pixelSize: 10
+                                font.letterSpacing: 1.2
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: bridge.ollamaStatusMessage || "Ollama status uninitialized."
+                            color: Theme.text
+                            font.family: Theme.body
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            spacing: 10
+                            Button {
+                                visible: bridge.ollamaStatusCode === "STOPPED"
+                                text: "Start Ollama Service"
+                                onClicked: bridge.startOllamaService()
+                            }
+                            Button {
+                                visible: bridge.ollamaStatusCode === "NOT_INSTALLED"
+                                text: "Install Ollama Now"
+                                onClicked: bridge.installOllamaNow()
+                            }
+                            Button {
+                                visible: bridge.ollamaStatusCode === "MODEL_MISSING"
+                                text: "Download Model (" + bridge.ollamaModelName + ")"
+                                onClicked: bridge.pullOllamaModel("")
+                            }
+                            Button {
+                                text: "Check Again"
+                                onClicked: bridge.checkOllamaStatus()
+                            }
+                        }
+                    }
+                }
             }
         }
     }
