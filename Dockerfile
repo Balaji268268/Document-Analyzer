@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libice6 \
     curl \
     git \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install Ollama engine for Linux container hosting
