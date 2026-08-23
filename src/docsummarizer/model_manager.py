@@ -865,7 +865,7 @@ class Summarizer:
         plain ``summarize`` output, so this never hard-fails. ``summarize`` (the
         ``-> str`` API the CLI uses) is unchanged.
         """
-        if self.llm is None:
+        if getattr(self, "_closed", False):
             raise RuntimeError(_CLOSED_MESSAGE)
 
         # NB: do not strip — citation offsets must index the caller's exact text
@@ -1050,6 +1050,7 @@ class Summarizer:
         `__del__`, which is unreliable during interpreter shutdown.
         """
         self._clear_llama_abort_callback()
+        self._closed = True
         if self.llm is not None:
             del self.llm
             self.llm = None

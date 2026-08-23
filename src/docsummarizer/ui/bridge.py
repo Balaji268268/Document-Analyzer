@@ -362,11 +362,9 @@ class ConsoleBridge(QObject):
         self._set_busy(False)
         self._set_status(status, color)
 
-    def _get_summarizer(self) -> Summarizer:
+    def _get_summarizer(self) -> Summarizer | None:
         self._mutex.lock()
         try:
-            if self._summarizer is None:
-                self._summarizer = Summarizer(get_model_path())
             return self._summarizer
         finally:
             self._mutex.unlock()
@@ -524,7 +522,16 @@ class ConsoleBridge(QObject):
     @Slot()
     def summarize(self) -> None:
         summarizer = self._get_summarizer()
-        if summarizer is None or not self._extracted_text or self._busy:
+        if summarizer is None:
+            path = get_model_path()
+            n_threads = self._settings.n_threads
+            n_gpu = self._settings.n_gpu_layers
+            try:
+                summarizer = self._factory(path, n_threads, n_gpu)
+            except Exception:
+                summarizer = Summarizer(path, n_threads=n_threads, n_gpu_layers=n_gpu)
+
+        if not self._extracted_text or self._busy:
             return
         text = self._extracted_text
         summary_type = self._summary_type
