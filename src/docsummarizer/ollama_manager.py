@@ -173,29 +173,31 @@ def start_ollama_service() -> bool:
         return True
 
 
-def download_and_install_ollama(  # noqa: PLR0912, PLR0915
+def _install_ollama_linux(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bool, str]:
-    """Download official Ollama installer and execute silent automated installation."""
-    if sys.platform != "win32":
-        if progress_callback:
-            progress_callback(20.0, "Executing Linux Ollama installer script...")
-        try:
-            res = subprocess.run(
-                ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],  # noqa: S607
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except Exception as exc:
-            return False, f"Linux installation error: {exc}"
-        else:
-            if res.returncode == 0:
-                if progress_callback:
-                    progress_callback(100.0, "Ollama installed successfully!")
-                return True, "Ollama installed successfully."
-            return False, f"Installation script failed: {res.stderr}"
+    if progress_callback:
+        progress_callback(20.0, "Executing Linux Ollama installer script...")
+    try:
+        res = subprocess.run(
+            ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as exc:
+        return False, f"Linux installation error: {exc}"
+    else:
+        if res.returncode == 0:
+            if progress_callback:
+                progress_callback(100.0, "Ollama installed successfully!")
+            return True, "Ollama installed successfully."
+        return False, f"Installation script failed: {res.stderr}"
 
+
+def _install_ollama_windows(
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> tuple[bool, str]:
     if progress_callback:
         progress_callback(10.0, "Connecting to Ollama download server...")
 
@@ -251,6 +253,15 @@ def download_and_install_ollama(  # noqa: PLR0912, PLR0915
     if progress_callback:
         progress_callback(100.0, "Installer completed. Please click Check Again.")
     return True, "Installer executed successfully."
+
+
+def download_and_install_ollama(
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> tuple[bool, str]:
+    """Download official Ollama installer and execute silent automated installation."""
+    if sys.platform == "win32":
+        return _install_ollama_windows(progress_callback)
+    return _install_ollama_linux(progress_callback)
 
 
 def pull_ollama_model(  # noqa: PLR0912
