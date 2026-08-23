@@ -127,10 +127,12 @@ Rectangle {
             Text {
                 visible: modal.errorMessage !== ""
                 text: modal.errorMessage
-                color: Theme.accent2
+                color: Theme.dark ? "#FF6B6B" : "#D32F2F"
                 font.family: Theme.body
-                font.pixelSize: 12
-                font.weight: Font.Medium
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
 
             // Action Button
