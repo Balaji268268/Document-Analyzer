@@ -193,14 +193,9 @@ class ConsoleBridge(QObject):
         """Authenticate user credentials."""
         user_clean = username.strip()
         pass_clean = password.strip()
-        if (
-            (
-                user_clean.lower() in ("admin", "user")
-                and pass_clean in ("admin", "user", "password")  # noqa: S105
-            )
-            or pass_clean == "admin"  # noqa: S105
-            or not pass_clean
-        ):
+        valid_user = user_clean.lower() in ("admin", "user")
+        valid_pass = pass_clean in ("admin", "user", "password") or pass_clean == "admin" or not pass_clean  # noqa: S105
+        if valid_user and valid_pass:
             self._authenticated = True
             self.authenticatedChanged.emit()
             log_info(f"User '{user_clean}' authenticated successfully.")
