@@ -5,14 +5,14 @@ export QT_QPA_PLATFORM=xcb
 export QT_QUICK_BACKEND=software
 export QSG_RENDER_LOOP=basic
 export QSG_RENDERER_BATCH_NODE_SIZE=64
-export OLLAMA_HOST=127.0.0.1:11434
+export DOCSUMMARIZER_DATA_DIR=/tmp/docsummarizer
+mkdir -p /tmp/docsummarizer/logs
 
 # 1. Start Ollama service in the background if installed
 if command -v ollama >/dev/null 2>&1; then
     echo "Starting background Ollama service..."
     ollama serve >/tmp/ollama.log 2>&1 &
-    sleep 3
-    (ollama pull llama3 >/dev/null 2>&1 &) || true
+    sleep 2
 fi
 
 # 2. Ensure noVNC root defaults to vnc.html so visiting '/' loads the web interface

@@ -9,6 +9,7 @@ var) only has to land in one place.
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 _APP_NAME = "DocSummarizer"
@@ -17,19 +18,28 @@ _APP_NAME = "DocSummarizer"
 def app_data_dir(subpath: str) -> Path:
     """Return the per-user data dir for `subpath`, creating it if missing.
 
+    - Custom: `DOCSUMMARIZER_DATA_DIR/<subpath>`
     - Windows: `%LOCALAPPDATA%\\DocSummarizer\\<subpath>`
     - macOS:   `~/Library/Application Support/DocSummarizer/<subpath>`
     - Linux:   `$XDG_DATA_HOME/DocSummarizer/<subpath>` (fallback
       `~/.local/share/DocSummarizer/<subpath>`)
     """
-    if sys.platform == "win32":
-        # `or` (not get's default) so a set-but-empty var doesn't resolve to cwd.
+    env_dir = os.environ.get("DOCSUMMARIZER_DATA_DIR")
+    if env_dir:
+        target = Path(env_dir) / subpath
+    elif sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        target = base / _APP_NAME / subpath
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
+        target = base / _APP_NAME / subpath
     else:
         base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+        target = base / _APP_NAME / subpath
 
-    target = base / _APP_NAME / subpath
-    target.mkdir(parents=True, exist_ok=True)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        target = Path(tempfile.gettempdir()) / _APP_NAME / subpath
+        target.mkdir(parents=True, exist_ok=True)
     return target
