@@ -477,3 +477,20 @@ def test_bridge_open_local_folder(qapp: QGuiApplication, monkeypatch, tmp_path) 
     bridge = ConsoleBridge(synchronous=True)
     bridge.openLocalFolder(str(tmp_path))
     assert len(opened) == 1
+
+
+def test_bridge_summarize_model_guard(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
+    """Test model guard emits error when model is not downloaded."""
+    monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: False)
+    bridge = ConsoleBridge(synchronous=True)
+    bridge._ollama_status_code = "OFFLINE"
+    f = tmp_path / "doc.txt"
+    f.write_text("Test content", encoding="utf-8")
+    bridge.loadDocument(str(f))
+
+    spy_toast = QSignalSpy(bridge.toast)
+    spy_err = QSignalSpy(bridge.summaryError)
+    bridge.summarize()
+    assert spy_toast.count() == 1
+    assert spy_err.count() == 1
+    assert "Please download/load the AI model first" in spy_toast.at(0)[0]

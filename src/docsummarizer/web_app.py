@@ -151,6 +151,19 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
+            from docsummarizer.model_manager import is_model_downloaded
+            from docsummarizer.ollama_manager import check_ollama_server
+
+            if not is_model_downloaded() and not check_ollama_server()[0]:
+                self._send_json(
+                    {
+                        "error": "Please download/load the AI model first before summarizing documents."
+                    },
+                    status=400,
+                    session_id=session.session_id,
+                )
+                return
+
             log_info(
                 f"Web API [Session {session.session_id[:8]}]: Summarizing text of length {len(text)} ({summary_type})"
             )
