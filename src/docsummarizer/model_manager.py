@@ -597,6 +597,14 @@ class Summarizer:
         start_time = time.time()
 
         self.llm: Any | None = None
+        self._closed = False
+        self.use_ollama = False
+
+        from docsummarizer.ollama_manager import check_ollama_status
+
+        if check_ollama_status().get("running"):
+            self.use_ollama = True
+
         if model_path and Path(model_path).exists() and Path(model_path).stat().st_size > 0:
             try:
                 from llama_cpp import Llama
@@ -615,7 +623,9 @@ class Summarizer:
                 log_error(f"Local llama.cpp initialization fallback: {exc}")
                 self.llm = None
         else:
-            log_info("Local GGUF file missing/empty; initializing Summarizer with Ollama & Extractive fallback.")
+            log_info(
+                "Local GGUF file missing/empty; initializing Summarizer with Ollama & Extractive fallback."
+            )
 
         # Set during summarize(); read per-token to interrupt generation on Stop.
         self._cancel_check: Callable[[], bool] | None = None
@@ -803,7 +813,7 @@ class Summarizer:
         Returns:
             The generated summary
         """
-        if self.llm is None and not getattr(self, "use_ollama", False):
+        if self._closed or (self.llm is None and not self.use_ollama):
             raise RuntimeError(_CLOSED_MESSAGE)
 
         self._cancel_check = should_cancel
@@ -1058,6 +1068,7 @@ class Summarizer:
         """
         self._clear_llama_abort_callback()
         self._closed = True
+        self.use_ollama = False
         if self.llm is not None:
             del self.llm
             self.llm = None
