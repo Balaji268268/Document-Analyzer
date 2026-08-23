@@ -224,6 +224,9 @@ def _install_ollama_linux(
             text=True,
             check=False,
         )
+    except Exception as exc:
+        return False, f"User-space installation error: {exc}"
+    else:
         if res_user.returncode == 0:
             start_ollama_service()
             if progress_callback:
@@ -231,8 +234,6 @@ def _install_ollama_linux(
             return True, "Standalone Ollama binary installed successfully."
         output_msg = res_user.stderr.strip() or res_user.stdout.strip()
         return False, f"Ollama installation failed: {output_msg}"
-    except Exception as exc:
-        return False, f"User-space installation error: {exc}"
 
 
 def _install_ollama_windows(
