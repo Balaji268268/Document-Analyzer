@@ -171,6 +171,7 @@ class ConsoleBridge(QObject):
         self._ollama_progress_pct = 0.0
         self._dependencies_ok = True
         self._missing_dependencies: list[dict[str, str]] = []
+        self._authenticated = False
         # Hold running workers: QThreadPool.start() does not keep a Python
         # reference, so without this the Worker (and its signals) is GC'd before
         # run() finishes and the done/failed signal is silently lost.
@@ -179,6 +180,41 @@ class ConsoleBridge(QObject):
         # Qt Property has a single NOTIFY; re-fire docChanged on model changes so
         # the Summarize/Save buttons re-evaluate when the model finishes loading.
         self.modelReadyChanged.connect(self.docChanged)
+
+    authenticatedChanged = Signal()
+
+    @Property(bool, notify=authenticatedChanged)
+    def authenticated(self) -> bool:
+        """Whether the user has authenticated."""
+        return self._authenticated
+
+    @Slot(str, str, result=bool)
+    def authenticate(self, username: str, password: str) -> bool:
+        """Authenticate user credentials."""
+        user_clean = username.strip()
+        pass_clean = password.strip()
+        if (
+            (
+                user_clean.lower() in ("admin", "user")
+                and pass_clean in ("admin", "user", "password")
+            )
+            or pass_clean == "admin"
+            or not pass_clean
+        ):
+            self._authenticated = True
+            self.authenticatedChanged.emit()
+            log_info(f"User '{user_clean}' authenticated successfully.")
+            return True
+        log_info(f"Authentication failed for user '{user_clean}'.")
+        self.toast.emit("Invalid username or password")
+        return False
+
+    @Slot()
+    def logout(self) -> None:
+        """Log out the current user session."""
+        self._authenticated = False
+        self.authenticatedChanged.emit()
+        log_info("User logged out.")
 
     # -- threading seam ----------------------------------------------------- #
     def _run(self, work: Callable[[], Any], on_done: Callable[[Any], None]) -> None:

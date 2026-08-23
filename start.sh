@@ -26,8 +26,18 @@ rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render &
 sleep 2
 
-# 4. Start Openbox & VNC
+# 4. Start Openbox & VNC (Single workspace mode to prevent switching to desktop 3)
 echo "Starting Openbox window manager on :99..."
+mkdir -p ~/.config/openbox
+cat <<'EOF' > ~/.config/openbox/rc.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <desktops>
+    <number>1</number>
+    <firstdefault>1</firstdefault>
+  </desktops>
+</openbox_config>
+EOF
 openbox --sm-disable >/dev/null 2>&1 &
 sleep 1
 

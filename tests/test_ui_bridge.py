@@ -434,3 +434,21 @@ def test_batch_process_no_documents_emits_toast(qapp, monkeypatch, tmp_path) -> 
     spy = QSignalSpy(bridge.toast)
     bridge.batchProcess(str(tmp_path), str(out))  # empty folder
     assert spy.count() == 1
+
+
+def test_bridge_authentication(qapp: QGuiApplication) -> None:
+    """Test ConsoleBridge authentication and logout slots."""
+    bridge = ConsoleBridge(synchronous=True)
+    assert bridge.authenticated is False
+
+    # Failed login
+    assert bridge.authenticate("wrong", "invalid") is False
+    assert bridge.authenticated is False
+
+    # Successful login
+    assert bridge.authenticate("admin", "admin") is True
+    assert bridge.authenticated is True
+
+    # Logout
+    bridge.logout()
+    assert bridge.authenticated is False
