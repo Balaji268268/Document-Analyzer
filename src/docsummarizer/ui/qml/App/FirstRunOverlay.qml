@@ -41,11 +41,6 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.overlay
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            preventStealing: true
-        }
     }
 
     // Centered panel ----------------------------------------------------- //

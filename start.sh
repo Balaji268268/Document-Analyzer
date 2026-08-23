@@ -29,5 +29,5 @@ echo "Starting noVNC HTML5 web proxy on port 8080..."
 websockify --web /usr/share/novnc 8080 localhost:5900 &
 sleep 2
 
-echo "Launching DocSummarizer Application..."
+echo "Launching DocSummarizer QML Application..."
 python run.py

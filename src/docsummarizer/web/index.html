@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocSummarizer — AI Document Intelligence & Summarization</title>
+
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #334155;
+      --accent-primary: #10b981;
+      --accent-secondary: #06b6d4;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(16, 185, 129, 0.5);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Navbar */
+    .navbar {
+      height: 70px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.3rem;
+      color: #0f172a;
+      box-shadow: 0 4px 20px var(--accent-glow);
+    }
+
+    .brand-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-primary);
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-primary);
+      box-shadow: 0 0 10px var(--accent-primary);
+    }
+
+    /* Main Container */
+    .main-container {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      flex: 1;
+    }
+
+    @media (max-width: 992px) {
+      .main-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Panel Card */
+    .panel-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Dropzone Upload */
+    .dropzone {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: var(--radius-md);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.4);
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-primary);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .dropzone-icon {
+      font-size: 2.2rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent-primary);
+    }
+
+    .dropzone-text {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .dropzone-text span {
+      color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    /* Text Area */
+    .text-input {
+      width: 100%;
+      height: 220px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .text-input:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    /* Option Selectors */
+    .options-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .options-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .summary-types {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+    }
+
+    @media (max-width: 576px) {
+      .summary-types {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .type-btn {
+      padding: 0.65rem 0.5rem;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .type-btn.active, .type-btn:hover {
+      background: var(--accent-primary);
+      color: #0f172a;
+      border-color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    /* Action Button */
+    .btn-submit {
+      width: 100%;
+      padding: 0.9rem;
+      border: none;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: 'Outfit', sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px var(--accent-glow);
+      transition: all 0.25s ease;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px var(--accent-glow);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
+    }
+
+    /* Output View Tabs */
+    .tabs-bar {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+    }
+
+    .tab-btn {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .tab-btn.active {
+      color: var(--accent-primary);
+    }
+
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -9px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent-primary);
+      border-radius: 2px;
+    }
+
+    /* Output Content */
+    .output-content {
+      min-height: 350px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      overflow-y: auto;
+      max-height: 500px;
+    }
+
+    .empty-state {
+      height: 100%;
+      min-height: 300px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      text-align: center;
+      gap: 0.75rem;
+    }
+
+    .summary-section-title {
+      color: var(--accent-secondary);
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .summary-section-title:first-child {
+      margin-top: 0;
+    }
+
+    .bullet-list {
+      list-style-type: none;
+      padding-left: 0;
+    }
+
+    .bullet-list li {
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .bullet-list li::before {
+      content: '•';
+      position: absolute;
+      left: 0.5rem;
+      color: var(--accent-primary);
+      font-weight: bold;
+    }
+
+    /* Grounding Citations */
+    .citation-box {
+      background: rgba(30, 41, 59, 0.8);
+      border-left: 3px solid var(--accent-primary);
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+      border-radius: 4px;
+    }
+
+    .citation-score {
+      font-size: 0.75rem;
+      color: var(--accent-primary);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(15, 23, 42, 0.3);
+      border-top-color: #0f172a;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">D</div>
+      <div class="brand-title">DocSummarizer</div>
+    </div>
+    <div class="badge-status">
+      <div class="dot"></div>
+      AI Web Engine Online
+    </div>
+  </nav>
+
+  <!-- Main Content Grid -->
+  <main class="main-container">
+    
+    <!-- Input Panel -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <h2 class="panel-title">📄 Document Input</h2>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">PDF, DOCX, RTF, TXT</span>
+      </div>
+
+      <!-- File Upload Zone -->
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <div class="dropzone-icon">📥</div>
+        <div class="dropzone-text">
+          Drag & Drop document here or <span>Browse File</span>
+        </div>
+        <input type="file" id="fileInput" accept=".pdf,.docx,.rtf,.txt" style="display: none;" onchange="handleFileSelect(event)" />
+      </div>
+
+      <!-- Direct Text Area -->
+      <textarea id="textInput" class="text-input" placeholder="Or paste your raw document text here..."></textarea>
+
+      <!-- Summary Mode Selector -->
+      <div class="options-row">
+        <div class="options-label">Summary Format</div>
+        <div class="summary-types">
+          <button class="type-btn active" data-type="detailed" onclick="selectType(this)">Detailed</button>
+          <button class="type-btn" data-type="executive" onclick="selectType(this)">Executive</button>
+          <button class="type-btn" data-type="key_points" onclick="selectType(this)">Key Points</button>
+          <button class="type-btn" data-type="action_items" onclick="selectType(this)">Actions</button>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <button class="btn-submit" id="btnSubmit" onclick="generateSummary()">
+        <span>Generate Summary</span> ✨
+      </button>
+    </section>
+
+    <!-- Output Panel -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <h2 class="panel-title">✨ Summary & Intelligence</h2>
+        <button id="btnCopy" onclick="copySummary()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; display: none;">
+          📋 Copy
+        </button>
+      </div>
+
+      <!-- Tabs Bar -->
+      <div class="tabs-bar">
+        <button class="tab-btn active" onclick="switchTab('summaryTab', this)">Summary</button>
+        <button class="tab-btn" onclick="switchTab('citationsTab', this)">Sentence Grounding</button>
+      </div>
+
+      <!-- Output View Area -->
+      <div class="output-content" id="outputArea">
+        <div class="empty-state">
+          <div style="font-size: 2.5rem;">📄</div>
+          <div>Upload a document or paste text on the left to generate an instant AI summary.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JavaScript Interaction Logic -->
+  <script>
+    let selectedSummaryType = 'detailed';
+    let currentResponseData = null;
+
+    function selectType(btn) {
+      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedSummaryType = btn.getAttribute('data-type');
+    }
+
+    function switchTab(tabName, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      if (!currentResponseData) return;
+
+      const output = document.getElementById('outputArea');
+      if (tabName === 'summaryTab') {
+        renderSummaryView(currentResponseData);
+      } else if (tabName === 'citationsTab') {
+        renderCitationsView(currentResponseData);
+      }
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        if (file.name.endsWith('.txt')) {
+          document.getElementById('textInput').value = e.target.result;
+        } else {
+          // Parse non-txt files via /api/parse
+          parseFileApi(file.name, e.target.result);
+        }
+      };
+      
+      if (file.name.endsWith('.txt')) {
+        reader.readAsText(file);
+      } else {
+        reader.readAsArrayBuffer(file);
+      }
+    }
+
+    async function parseFileApi(filename, arrayBuffer) {
+      const dropzoneText = document.querySelector('.dropzone-text');
+      dropzoneText.innerHTML = `Extracting text from <b>${filename}</b>...`;
+
+      try {
+        const bytes = Array.from(new Uint8Array(arrayBuffer));
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: filename, content_bytes: bytes })
+        });
+        const data = await res.json();
+        if (data.extracted_text) {
+          document.getElementById('textInput').value = data.extracted_text;
+          dropzoneText.innerHTML = `Loaded <b>${filename}</b> (${data.char_count} chars)`;
+        } else {
+          alert('Failed to parse file: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('File upload error: ' + err);
+      }
+    }
+
+    async function generateSummary() {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) {
+        alert('Please paste text or upload a document first.');
+        return;
+      }
+
+      const btn = document.getElementById('btnSubmit');
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div> Generating Summary...`;
+
+      const output = document.getElementById('outputArea');
+      output.innerHTML = `<div class="empty-state"><div class="spinner" style="width:40px; height:40px;"></div><div>Processing document & grounding facts...</div></div>`;
+
+      try {
+        const res = await fetch('/api/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text, summary_type: selectedSummaryType })
+        });
+
+        const data = await res.json();
+        btn.disabled = false;
+        btn.innerHTML = `<span>Generate Summary</span> ✨`;
+
+        if (data.success) {
+          currentResponseData = data;
+          document.getElementById('btnCopy').style.display = 'block';
+          renderSummaryView(data);
+        } else {
+          output.innerHTML = `<div class="empty-state" style="color: #ef4444;">⚠️ ${data.error || 'Summarization failed.'}</div>`;
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = `<span>Generate Summary</span> ✨`;
+        output.innerHTML = `<div class="empty-state" style="color: #ef4444;">⚠️ Network error: ${err}</div>`;
+      }
+    }
+
+    function renderSummaryView(data) {
+      const output = document.getElementById('outputArea');
+      const sum = data.summary;
+
+      let html = '';
+      if (sum.overview) {
+        html += `<div class="summary-section-title">Executive Overview</div><p>${escapeHtml(sum.overview)}</p>`;
+      }
+      if (sum.key_takeaways && sum.key_takeaways.length > 0) {
+        html += `<div class="summary-section-title">Key Takeaways</div><ul class="bullet-list">`;
+        sum.key_takeaways.forEach(item => {
+          html += `<li>${escapeHtml(item)}</li>`;
+        });
+        html += `</ul>`;
+      }
+      if (sum.action_items && sum.action_items.length > 0) {
+        html += `<div class="summary-section-title">Action Items</div><ul class="bullet-list">`;
+        sum.action_items.forEach(item => {
+          html += `<li>${escapeHtml(item)}</li>`;
+        });
+        html += `</ul>`;
+      }
+      if (!html) {
+        html = `<p>${escapeHtml(data.summary_text)}</p>`;
+      }
+
+      output.innerHTML = html;
+    }
+
+    function renderCitationsView(data) {
+      const output = document.getElementById('outputArea');
+      if (!data.provenance || data.provenance.length === 0) {
+        output.innerHTML = `<div class="empty-state">No sentence grounding citations generated.</div>`;
+        return;
+      }
+
+      let html = `<div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.85rem;">Each summary sentence is grounded directly in the original source document:</div>`;
+      data.provenance.forEach((p, idx) => {
+        const scorePct = Math.round(p.confidence * 100);
+        html += `
+          <div class="citation-box">
+            <div class="citation-score">Sentence ${idx + 1} — ${scorePct}% Grounding Match</div>
+            <div style="margin-top: 4px; font-weight: 500;">"${escapeHtml(p.summary_sentence)}"</div>
+            <div style="margin-top: 6px; font-size: 0.85rem; color: var(--text-muted);">Source: "${escapeHtml(p.source_sentence)}"</div>
+          </div>
+        `;
+      });
+
+      output.innerHTML = html;
+    }
+
+    function copySummary() {
+      if (!currentResponseData) return;
+      navigator.clipboard.writeText(currentResponseData.summary_text).then(() => {
+        const btn = document.getElementById('btnCopy');
+        btn.innerText = '✅ Copied!';
+        setTimeout(() => { btn.innerText = '📋 Copy'; }, 2000);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
