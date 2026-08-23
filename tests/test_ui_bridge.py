@@ -452,3 +452,28 @@ def test_bridge_authentication(qapp: QGuiApplication) -> None:
     # Logout
     bridge.logout()
     assert bridge.authenticated is False
+
+
+def test_bridge_reset_session(qapp: QGuiApplication, tmp_path) -> None:
+    """Test resetSession clears active file and document memory."""
+    f = tmp_path / "doc.txt"
+    f.write_text("Test content", encoding="utf-8")
+    bridge = ConsoleBridge(synchronous=True)
+    bridge.loadDocument(str(f))
+    assert bridge.hasDoc is True
+
+    bridge.resetSession()
+    assert bridge.hasDoc is False
+    assert bridge.currentFile == ""
+    assert bridge.extractedText == ""
+
+
+def test_bridge_open_local_folder(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
+    """Test openLocalFolder slot executes without raising exceptions."""
+    from PySide6.QtGui import QDesktopServices
+
+    opened: list[str] = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toLocalFile()))
+    bridge = ConsoleBridge(synchronous=True)
+    bridge.openLocalFolder(str(tmp_path))
+    assert len(opened) == 1

@@ -159,6 +159,28 @@ Rectangle {
                 }
             }
         }
+
+        // Logout button
+        Rectangle {
+            visible: bridge.authenticated
+            Layout.preferredWidth: 30
+            Layout.preferredHeight: 30
+            radius: 3
+            color: "transparent"
+            border.width: 1
+            border.color: Theme.line2
+            Text {
+                anchors.centerIn: parent
+                text: "⎋"
+                color: Theme.accent2
+                font.pixelSize: 15
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: bridge.logout()
+            }
+        }
     }
 
     Rectangle {

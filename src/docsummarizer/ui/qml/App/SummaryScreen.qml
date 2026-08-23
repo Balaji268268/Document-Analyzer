@@ -153,11 +153,19 @@ Item {
                     font.pixelSize: 9
                     font.letterSpacing: 1.5
                 }
-                ConsoleButton {
+                RowLayout {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Select File"
-                    primary: true
-                    onClicked: openDialog.open()
+                    spacing: 12
+                    ConsoleButton {
+                        text: "Select File"
+                        primary: true
+                        onClicked: openDialog.open()
+                    }
+                    ConsoleButton {
+                        text: "Open Local Folder"
+                        primary: false
+                        onClicked: bridge.openLocalFolder("")
+                    }
                 }
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter

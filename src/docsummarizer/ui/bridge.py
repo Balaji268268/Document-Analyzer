@@ -213,6 +213,32 @@ class ConsoleBridge(QObject):
         self.authenticatedChanged.emit()
         log_info("User logged out.")
 
+    @Slot(str)
+    def openLocalFolder(self, folder_path: str = "") -> None:
+        """Open a local folder on the user's host computer in File Explorer."""
+        from PySide6.QtCore import QStandardPaths, QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        target = folder_path.strip()
+        if not target:
+            target = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        path_obj = Path(_clean_file_url(target))
+        if not path_obj.exists():
+            path_obj = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        if path_obj.is_file():
+            path_obj = path_obj.parent
+        log_info(f"Opening local folder: {path_obj}")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path_obj)))
+
+    @Slot()
+    def resetSession(self) -> None:
+        """Reset current document session to a fresh empty state."""
+        self._current_file = ""
+        self._extracted_text = ""
+        self._last_summary = None
+        self.docChanged.emit()
+        log_info("Session reset to fresh empty state.")
+
     # -- threading seam ----------------------------------------------------- #
     def _run(self, work: Callable[[], Any], on_done: Callable[[Any], None]) -> None:
         """Run ``work`` off-thread (or inline in synchronous/test mode).

@@ -198,6 +198,12 @@ ApplicationWindow {
         visible: false
     }
 
+    // Login Modal Overlay (shown whenever user is not authenticated)
+    LoginModal {
+        anchors.fill: parent
+        visible: !bridge.authenticated
+    }
+
     Toast {
         id: toast
     }

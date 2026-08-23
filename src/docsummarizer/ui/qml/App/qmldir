@@ -17,3 +17,4 @@ ExtractScreen 1.0 ExtractScreen.qml
 BatchScreen 1.0 BatchScreen.qml
 ConfigScreen 1.0 ConfigScreen.qml
 FirstRunOverlay 1.0 FirstRunOverlay.qml
+LoginModal 1.0 LoginModal.qml
