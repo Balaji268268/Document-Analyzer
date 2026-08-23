@@ -167,10 +167,11 @@ Item {
                         color: Theme.brassDot
                     }
                     Text {
-                        text: "Processed entirely on your machine — files never leave this device."
-                        color: Theme.faint
+                        text: "Remote browser user? Use HTML Web App (port 8081) for local PC file upload."
+                        color: Theme.accent
                         font.family: Theme.body
-                        font.pixelSize: 12
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
                     }
                 }
             }

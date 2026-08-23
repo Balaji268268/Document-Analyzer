@@ -81,6 +81,17 @@ def main() -> int:
 
         log_error(f"Startup dependency resolution warning: {exc}")
 
+    try:
+        import threading
+        from docsummarizer.web_app import run_web_server
+
+        web_thread = threading.Thread(
+            target=run_web_server, kwargs={"port": 8081, "host": "0.0.0.0"}, daemon=True
+        )
+        web_thread.start()
+    except Exception as exc:
+        log_error(f"Background web server startup warning: {exc}")
+
     app = QGuiApplication(sys.argv)
     app.setApplicationName("DocSummarizer")
     app.setOrganizationName("DocSummarizer")
