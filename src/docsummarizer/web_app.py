@@ -156,33 +156,45 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             )
 
             sentences = split_sentences(text)
-            points: list[SummaryPoint] = []
-            for sent_start, sent_end in sentences[:5]:
-                sent_text = text[sent_start:sent_end].strip()
-                if len(sent_text) > 10:
-                    points.append(SummaryPoint(text=sent_text))
 
-            lead_text = text[:300] if len(text) > 300 else text
-            summary_text = "\n".join(f"- {pt.text}" for pt in points) if points else lead_text
+            try:
+                from docsummarizer.model_manager import Summarizer
 
-            summary_dict = {
-                "summaryType": summary_type,
-                "lead": lead_text,
-                "points": [{"text": pt.text, "hasCitation": False} for pt in points],
-                "text": summary_text,
-            }
+                summarizer = Summarizer()
+                summary_dict = summarizer.summarize_structured(text, summary_type=summary_type)
+                summary_text = summary_dict.get("text", "")
+            except Exception as exc:
+                log_error(f"LLM Summarizer engine fallback: {exc}")
+                points: list[SummaryPoint] = []
+                for sent_start, sent_end in sentences[:5]:
+                    sent_text = text[sent_start:sent_end].strip()
+                    if len(sent_text) > 10:
+                        points.append(SummaryPoint(text=sent_text))
+
+                lead_text = text[:300] if len(text) > 300 else text
+                summary_text = "\n".join(f"- {pt.text}" for pt in points) if points else lead_text
+
+                summary_dict = {
+                    "summaryType": summary_type,
+                    "lead": lead_text,
+                    "points": [{"text": pt.text, "hasCitation": False} for pt in points],
+                    "text": summary_text,
+                }
 
             provenance: list[dict[str, object]] = []
-            for pt in points:
-                span = locate_quote(pt.text, text, sentences)
-                if span:
-                    provenance.append(
-                        {
-                            "summary_sentence": pt.text,
-                            "source_sentence": span.quote,
-                            "confidence": span.score,
-                        }
-                    )
+            pts = summary_dict.get("points", [])
+            for pt in pts:
+                pt_text = pt.get("text", "") if isinstance(pt, dict) else str(pt)
+                if pt_text:
+                    span = locate_quote(pt_text, text, sentences)
+                    if span:
+                        provenance.append(
+                            {
+                                "summary_sentence": pt_text,
+                                "source_sentence": span.quote,
+                                "confidence": span.score,
+                            }
+                        )
 
             history_item = {
                 "id": f"doc_{uuid.uuid4().hex[:8]}",
@@ -304,5 +316,10 @@ def run_web_server(port: int = 8080, host: str = "0.0.0.0") -> None:  # noqa: S1
 
 
 if __name__ == "__main__":
-    port_env = int(os.environ.get("PORT", "8080"))
-    run_web_server(port=port_env)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="DocSummarizer Web Server")
+    parser.add_argument("--port", "-p", type=int, default=int(os.environ.get("PORT", "8080")))
+    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104
+    args = parser.parse_args()
+    run_web_server(port=args.port, host=args.host)

@@ -35,11 +35,12 @@ echo "Starting VNC server on port 5900..."
 x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -nowf >/dev/null 2>&1 &
 sleep 2
 
-# 5. Bind noVNC to Azure App Service / Render PORT
+# 5. Serve Ultra-Fast Native Web Application on main deployment PORT
 APP_PORT="${PORT:-${WEBSITES_PORT:-8080}}"
-echo "Starting noVNC HTML5 web proxy on port ${APP_PORT}..."
-websockify --web /usr/share/novnc "${APP_PORT}" localhost:5900 &
-sleep 2
+echo "Starting DocSummarizer Native Web Application on port ${APP_PORT}..."
 
-echo "Launching DocSummarizer Application..."
-exec python run.py
+# Launch QML desktop app in virtual display in background if needed
+python run.py >/tmp/qml.log 2>&1 &
+
+# Execute Web Server on primary PORT for 60fps local file picker experience
+exec python -m docsummarizer.web_app --port "${APP_PORT}"

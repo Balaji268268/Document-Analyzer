@@ -153,7 +153,7 @@ Item {
                 }
                 ConsoleButton {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Select File"
+                    text: "Select Container File"
                     primary: true
                     onClicked: openDialog.open()
                 }
@@ -164,13 +164,13 @@ Item {
                         width: 6
                         height: 6
                         radius: 3
-                        color: Theme.brassDot
+                        color: Theme.accent
                     }
                     Text {
-                        text: "Remote browser user? Use HTML Web App (port 8081) for local PC file upload."
+                        text: "⚡ For zero-lag native PC file picker, open http://localhost:8080 in your browser!"
                         color: Theme.accent
                         font.family: Theme.body
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }
                 }
