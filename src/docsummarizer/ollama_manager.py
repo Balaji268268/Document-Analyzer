@@ -181,7 +181,7 @@ def _install_ollama_linux(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bool, str]:
     if progress_callback:
-        progress_callback(20.0, "Executing Linux Ollama installer script...")
+        progress_callback(20.0, "Checking Ollama Linux installation...")
 
     if find_ollama_executable():
         start_ollama_service()
@@ -189,26 +189,25 @@ def _install_ollama_linux(
             progress_callback(100.0, "Ollama is already installed and service launched!")
         return True, "Ollama is already installed."
 
-    cmd = "curl -fsSL https://ollama.com/install.sh | sh"
-    if hasattr(os, "geteuid") and os.geteuid() != 0 and shutil.which("sudo"):
-        cmd = "curl -fsSL https://ollama.com/install.sh | sudo -E sh"
+    # If running as root (e.g. Dockerfile build), run official system install script
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        try:
+            res = subprocess.run(  # noqa: S603
+                ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],  # noqa: S607
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except Exception as exc:
+            log_info(f"Linux install.sh execution error: {exc}")
+        else:
+            if res.returncode == 0:
+                start_ollama_service()
+                if progress_callback:
+                    progress_callback(100.0, "Ollama installed successfully!")
+                return True, "Ollama installed successfully."
 
-    try:
-        res = subprocess.run(  # noqa: S603
-            ["sh", "-c", cmd],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode == 0:
-            start_ollama_service()
-            if progress_callback:
-                progress_callback(100.0, "Ollama installed successfully!")
-            return True, "Ollama installed successfully."
-    except Exception as exc:
-        log_info(f"Linux install.sh execution failed: {exc}")
-
-    # Fallback for rootless containers/Render: download standalone user-space Ollama binary
+    # Non-root container / Render deployment: download standalone user-space Ollama binary
     if progress_callback:
         progress_callback(50.0, "Downloading standalone user-space Ollama binary...")
 
