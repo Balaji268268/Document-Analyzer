@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: document-analyzer
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    envVars:
+      - key: PORT
+        value: "8080"
