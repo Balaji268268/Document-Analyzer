@@ -177,7 +177,7 @@ def start_ollama_service() -> bool:
         return True
 
 
-def _install_ollama_linux(
+def _install_ollama_linux(  # noqa: PLR0912
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bool, str]:
     if progress_callback:
@@ -192,7 +192,7 @@ def _install_ollama_linux(
     # If running as root (e.g. Dockerfile build), run official system install script
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         try:
-            res = subprocess.run(  # noqa: S603
+            res = subprocess.run(
                 ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],  # noqa: S607
                 capture_output=True,
                 text=True,
