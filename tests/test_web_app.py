@@ -58,8 +58,9 @@ def test_web_handler_history_endpoints() -> None:
     )
 
 
-def test_web_handler_summarize_endpoint() -> None:
+def test_web_handler_summarize_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test /api/summarize POST endpoint returns structured summary."""
+    monkeypatch.setattr("docsummarizer.model_manager.is_model_downloaded", lambda: True)
     handler = MagicMock()
     mock_session = MagicMock()
     mock_session.session_id = "sess-1"
@@ -79,6 +80,30 @@ def test_web_handler_summarize_endpoint() -> None:
     assert args[0]["success"] is True
     assert "summary" in args[0]
     assert kwargs.get("session_id") == "sess-1"
+
+
+def test_web_handler_summarize_model_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test /api/summarize POST endpoint returns 400 when model is missing."""
+    monkeypatch.setattr("docsummarizer.model_manager.is_model_downloaded", lambda: False)
+    monkeypatch.setattr(
+        "docsummarizer.ollama_manager.check_ollama_status", lambda: ("STOPPED", "Offline")
+    )
+    handler = MagicMock()
+    mock_session = MagicMock()
+    mock_session.session_id = "sess-1"
+    handler._get_session.return_value = mock_session
+
+    mock_body = json.dumps(
+        {"text": "This is a test document text.", "summary_type": "detailed"}
+    ).encode("utf-8")
+    handler.headers = {"Content-Length": str(len(mock_body))}
+    handler.rfile = io.BytesIO(mock_body)
+
+    DocSummarizerWebHandler._handle_summarize(handler)
+    handler._send_json.assert_called_once()
+    args, kwargs = handler._send_json.call_args
+    assert kwargs.get("status") == 400
+    assert "Please download/load the AI model first" in args[0]["error"]
 
 
 def test_web_handler_summarize_empty_text() -> None:
