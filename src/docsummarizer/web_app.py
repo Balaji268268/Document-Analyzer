@@ -20,7 +20,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 # Ensure src/ is on Python path
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -72,10 +72,10 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
         cookie_header = self.headers.get("Cookie", "")
         session_id = None
         if "doc_session_id=" in cookie_header:
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if part.startswith("doc_session_id="):
-                    session_id = part.split("=", 1)[1].strip()
+            for item in cookie_header.split(";"):
+                cookie = item.strip()
+                if cookie.startswith("doc_session_id="):
+                    session_id = cookie.split("=", 1)[1].strip()
                     break
 
         if not session_id or session_id not in SESSIONS:
@@ -240,7 +240,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                 tmp.write(bytes(content_bytes))
                 tmp_path = Path(tmp.name)
 
-            extracted_text = extract_text(str(tmp_path))
+            extracted_text, _err = extract_text(str(tmp_path))
             tmp_path.unlink(missing_ok=True)
 
             session.current_filename = filename
