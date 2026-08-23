@@ -10,6 +10,7 @@ import App
 ApplicationWindow {
     id: win
     visible: true
+    visibility: Window.Maximized
     width: 1240
     height: 760
     minimumWidth: 1000
