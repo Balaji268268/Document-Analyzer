@@ -83,10 +83,13 @@ def main() -> int:
 
     try:
         import threading
+
         from docsummarizer.web_app import run_web_server
 
         web_thread = threading.Thread(
-            target=run_web_server, kwargs={"port": 8081, "host": "0.0.0.0"}, daemon=True
+            target=run_web_server,
+            kwargs={"port": 8081, "host": "0.0.0.0"},
+            daemon=True,  # noqa: S104
         )
         web_thread.start()
     except Exception as exc:
