@@ -2,7 +2,7 @@
 set -e
 
 export DISPLAY=:99
-export QT_QPA_PLATFORM=offscreen
+export QT_QPA_PLATFORM=xcb
 export QT_QUICK_BACKEND=software
 
 # Ensure noVNC root defaults to vnc.html so visiting '/' loads the web app interface
@@ -14,7 +14,7 @@ fi
 
 echo "Starting virtual display Xvfb on :99..."
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
-Xvfb :99 -screen 0 1280x800x24 &
+Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render &
 sleep 2
 
 echo "Starting Openbox window manager on :99..."
