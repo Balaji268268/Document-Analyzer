@@ -91,3 +91,48 @@ def test_web_handler_not_found() -> None:
 
     DocSummarizerWebHandler.do_POST(handler)
     handler.send_error.assert_called_once()
+
+
+def test_web_handler_translate_path() -> None:
+    """Test URL translation to static web directory."""
+    handler = MagicMock()
+    index_path = DocSummarizerWebHandler.translate_path(handler, "/")
+    assert "index.html" in index_path
+
+    asset_path = DocSummarizerWebHandler.translate_path(handler, "/style.css")
+    assert "style.css" in asset_path
+
+
+def test_web_handler_send_json() -> None:
+    """Test _send_json formats response headers and body."""
+    handler = MagicMock()
+    handler.wfile = io.BytesIO()
+
+    DocSummarizerWebHandler._send_json(handler, {"result": "ok"}, status=200)
+    handler.send_response.assert_called_once_with(200)
+    handler.send_header.assert_any_call("Content-Type", "application/json; charset=utf-8")
+    assert b'{"result": "ok"}' in handler.wfile.getvalue()
+
+
+def test_web_handler_parse_file_multipart_error() -> None:
+    """Test _handle_parse_file returns error when multipart is passed."""
+    handler = MagicMock()
+    handler.headers = {"Content-Type": "multipart/form-data; boundary=something"}
+    handler.rfile = io.BytesIO(b"data")
+
+    DocSummarizerWebHandler._handle_parse_file(handler)
+    handler._send_json.assert_called_once_with(
+        {"error": "Please send JSON body with base64/text content."}, status=400
+    )
+
+
+def test_web_handler_summarize_exception_handling() -> None:
+    """Test _handle_summarize catches exceptions and returns 500 status."""
+    handler = MagicMock()
+    handler.headers = {"Content-Length": "invalid"}
+
+    DocSummarizerWebHandler._handle_summarize(handler)
+    handler._send_json.assert_called_once()
+    args, kwargs = handler._send_json.call_args
+    assert kwargs.get("status") == 500
+
