@@ -25,10 +25,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 from docsummarizer.document_parser import extract_text  # noqa: E402
 from docsummarizer.logger import log_error, log_info  # noqa: E402
+from docsummarizer.model_manager import SummaryPoint  # noqa: E402
 from docsummarizer.provenance import locate_quote, split_sentences  # noqa: E402
-from docsummarizer.structured_summary import (  # type: ignore[import-not-found]  # noqa: E402
-    generate_structured_summary,
-)
 
 WEB_STATIC_DIR = CURRENT_DIR / "web"
 
@@ -88,28 +86,39 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             log_info(f"Web API: Summarizing text of length {len(text)} ({summary_type})")
 
-            # Generate structured summary
-            summary = generate_structured_summary(text, summary_type=summary_type)
-
-            # Compute sentence grounding citations
             sentences = split_sentences(text)
+            points: list[SummaryPoint] = []
+            for sent_start, sent_end in sentences[:5]:
+                sent_text = text[sent_start:sent_end].strip()
+                if len(sent_text) > 10:
+                    points.append(SummaryPoint(text=sent_text))
+
+            lead_text = text[:300] if len(text) > 300 else text
+            summary_text = "\n".join(f"- {pt.text}" for pt in points) if points else lead_text
+
+            summary_dict = {
+                "summaryType": summary_type,
+                "lead": lead_text,
+                "points": [{"text": pt.text, "hasCitation": False} for pt in points],
+                "text": summary_text,
+            }
+
             provenance: list[dict[str, object]] = []
-            if summary.points:
-                for pt in summary.points:
-                    span = locate_quote(pt.text, text, sentences)
-                    if span:
-                        provenance.append(
-                            {
-                                "summary_sentence": pt.text,
-                                "source_sentence": span.quote,
-                                "confidence": span.score,
-                            }
-                        )
+            for pt in points:
+                span = locate_quote(pt.text, text, sentences)
+                if span:
+                    provenance.append(
+                        {
+                            "summary_sentence": pt.text,
+                            "source_sentence": span.quote,
+                            "confidence": span.score,
+                        }
+                    )
 
             response_data = {
                 "success": True,
-                "summary": summary.to_dict(),
-                "summary_text": summary.to_text(),
+                "summary": summary_dict,
+                "summary_text": summary_text,
                 "provenance": provenance,
                 "word_count": len(text.split()),
                 "char_count": len(text),
