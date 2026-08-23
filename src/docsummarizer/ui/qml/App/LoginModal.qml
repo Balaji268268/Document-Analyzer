@@ -22,9 +22,9 @@ Rectangle {
         width: Math.min(parent.width - 32, 420)
         height: column.implicitHeight + 48
         anchors.centerIn: parent
-        color: Theme.cardBg
+        color: Theme.block
         radius: 12
-        border.color: Theme.borderSubtle
+        border.color: Theme.line2
         border.width: 1
 
         ColumnLayout {
@@ -44,8 +44,8 @@ Rectangle {
                 }
                 Text {
                     text: "AUTHENTICATION"
-                    color: Theme.fgPrimary
-                    font.family: Theme.head
+                    color: Theme.ink
+                    font.family: Theme.serif
                     font.pixelSize: 20
                     font.weight: Font.Bold
                     font.letterSpacing: 2
@@ -54,7 +54,7 @@ Rectangle {
 
             Text {
                 text: "Please sign in to access DocSummarizer workspace."
-                color: Theme.fgSecondary
+                color: Theme.text
                 font.family: Theme.body
                 font.pixelSize: 13
                 Layout.fillWidth: true
@@ -63,7 +63,7 @@ Rectangle {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: Theme.borderSubtle
+                color: Theme.line2
             }
 
             // Username Input
@@ -81,13 +81,13 @@ Rectangle {
                     Layout.fillWidth: true
                     placeholderText: "admin"
                     text: "admin"
-                    color: Theme.fgPrimary
+                    color: Theme.ink
                     font.family: Theme.body
                     font.pixelSize: 14
                     background: Rectangle {
-                        color: Theme.fieldBg
+                        color: Theme.pageBg
                         radius: 6
-                        border.color: userInput.activeFocus ? Theme.accent : Theme.borderSubtle
+                        border.color: userInput.activeFocus ? Theme.accent : Theme.line2
                         border.width: 1
                     }
                     onAccepted: passInput.forceActiveFocus()
@@ -110,13 +110,13 @@ Rectangle {
                     placeholderText: "admin"
                     text: "admin"
                     echoMode: TextInput.Password
-                    color: Theme.fgPrimary
+                    color: Theme.ink
                     font.family: Theme.body
                     font.pixelSize: 14
                     background: Rectangle {
-                        color: Theme.fieldBg
+                        color: Theme.pageBg
                         radius: 6
-                        border.color: passInput.activeFocus ? Theme.accent : Theme.borderSubtle
+                        border.color: passInput.activeFocus ? Theme.accent : Theme.line2
                         border.width: 1
                     }
                     onAccepted: submitLogin()
