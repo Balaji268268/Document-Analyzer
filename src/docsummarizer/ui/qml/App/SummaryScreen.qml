@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import QtCore
 import App
 
 // Summary view. Two states: an empty dropzone (no document) and the loaded
@@ -87,7 +88,8 @@ Item {
 
     FileDialog {
         id: openDialog
-        title: "Select a document or image"
+        title: "Select a document or image from your computer"
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         nameFilters: ["Supported Files (*.pdf *.docx *.rtf *.txt *.md *.png *.jpg *.jpeg *.webp *.bmp *.tiff)", "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tiff)", "All files (*)"]
         onAccepted: bridge.loadDocument(selectedFile.toString())
     }
