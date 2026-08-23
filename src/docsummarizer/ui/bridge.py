@@ -495,7 +495,6 @@ class ConsoleBridge(QObject):
             else:
                 self._extracted_text = text
                 self._finish("Text extracted")
-                self.summarize()
             self.docChanged.emit()
 
         self._run(work, done)

@@ -720,12 +720,19 @@ class Summarizer:
         if llm is None:
             # Fallback 1: Query active Ollama service if available
             try:
+                import urllib.request
+
                 from docsummarizer.ollama_manager import check_ollama_status
+
                 st = check_ollama_status()
                 if st.get("running"):
                     url = "http://localhost:11434/api/chat"
-                    payload = json.dumps({"model": "llama3", "messages": messages, "stream": False}).encode("utf-8")
-                    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+                    payload = json.dumps(
+                        {"model": "llama3", "messages": messages, "stream": False}
+                    ).encode("utf-8")
+                    req = urllib.request.Request(
+                        url, data=payload, headers={"Content-Type": "application/json"}
+                    )
                     with urllib.request.urlopen(req, timeout=120) as resp:
                         if resp.status == 200:
                             res_data = json.loads(resp.read().decode("utf-8"))
@@ -796,7 +803,7 @@ class Summarizer:
         Returns:
             The generated summary
         """
-        if self.llm is None:
+        if self.llm is None and not getattr(self, "use_ollama", False):
             raise RuntimeError(_CLOSED_MESSAGE)
 
         self._cancel_check = should_cancel
