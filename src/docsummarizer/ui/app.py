@@ -74,9 +74,11 @@ def main() -> int:
     # Perform startup Python dependency check & auto-resolution
     try:
         from docsummarizer import dependency_manager
+
         dependency_manager.auto_install_missing_dependencies()
     except Exception as exc:
         from docsummarizer.logger import log_error
+
         log_error(f"Startup dependency resolution warning: {exc}")
 
     app = QGuiApplication(sys.argv)

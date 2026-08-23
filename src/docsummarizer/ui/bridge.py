@@ -753,7 +753,9 @@ class ConsoleBridge(QObject):
     def _get_ollama_progress_percent(self) -> float:
         return self._ollama_progress_pct
 
-    ollamaProgressPercent = Property(float, _get_ollama_progress_percent, notify=ollamaStatusChanged)
+    ollamaProgressPercent = Property(
+        float, _get_ollama_progress_percent, notify=ollamaStatusChanged
+    )
 
     def _get_dependencies_ok(self) -> bool:
         return self._dependencies_ok
@@ -763,11 +765,14 @@ class ConsoleBridge(QObject):
     def _get_missing_dependencies(self) -> list[dict[str, str]]:
         return self._missing_dependencies
 
-    missingDependencies = Property(list, _get_missing_dependencies, notify=dependenciesStatusChanged)
+    missingDependencies = Property(
+        list, _get_missing_dependencies, notify=dependenciesStatusChanged
+    )
 
     @Slot()
     def checkOllamaStatus(self) -> None:
         """Check status of Ollama executable, background service, and models."""
+
         def work() -> dict[str, Any]:
             return ollama_manager.check_ollama_status(self._ollama_model_name)
 
@@ -861,6 +866,7 @@ class ConsoleBridge(QObject):
     @Slot()
     def installMissingDependencies(self) -> None:
         """Automatically install missing Python packages using pip."""
+
         def prog(pct: float, msg: str) -> None:
             self.progress.emit(pct, msg)
 
@@ -878,7 +884,6 @@ class ConsoleBridge(QObject):
                 self.toast.emit(f"{len(failed)} package(s) failed to install")
 
         self._run(work, done)
-
 
 
 def _auto_threads() -> int:

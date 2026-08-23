@@ -55,9 +55,9 @@ def find_ollama_executable() -> Path | None:
 def get_available_ollama_models(host: str = OLLAMA_BASE_URL) -> list[str]:
     """Query the Ollama API (/api/tags) for currently installed models."""
     url = f"{host}/api/tags"
-    req = urllib.request.Request(url, headers={"User-Agent": "DocSummarizer"})
+    req = urllib.request.Request(url, headers={"User-Agent": "DocSummarizer"})  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:  # noqa: S310
             if resp.status == 200:
                 data = json.loads(resp.read().decode("utf-8"))
                 models = data.get("models", [])
@@ -66,9 +66,8 @@ def get_available_ollama_models(host: str = OLLAMA_BASE_URL) -> list[str]:
                     name = m.get("name", "")
                     if name:
                         names.append(name)
-                        # Also strip tags like ':latest' for simple matching
                         if ":" in name:
-                            names.append(name.split(":")[0])
+                            names.append(name.split(":", maxsplit=1)[0])
                 return names
     except Exception as exc:
         log_info(f"Ollama API /api/tags unreachable: {exc}")
@@ -80,17 +79,7 @@ def check_ollama_status(
     model_name: str = DEFAULT_OLLAMA_MODEL,
     host: str = OLLAMA_BASE_URL,
 ) -> dict[str, str | bool | list[str]]:
-    """Determine comprehensive Ollama environment status.
-
-    Returns a status dict:
-    - ``code``: READY | STOPPED | NOT_INSTALLED | MODEL_MISSING
-    - ``message``: Human-readable explanation
-    - ``installed``: bool
-    - ``running``: bool
-    - ``model_present``: bool
-    - ``exe_path``: str
-    - ``models``: list of installed model names
-    """
+    """Determine comprehensive Ollama environment status."""
     exe_path = find_ollama_executable()
     installed = exe_path is not None
     available_models = get_available_ollama_models(host)
@@ -118,7 +107,6 @@ def check_ollama_status(
             "models": [],
         }
 
-    # Service is running. Check model presence.
     target_clean = model_name.split(":", maxsplit=1)[0].lower()
     model_present = any(target_clean in m.lower() for m in available_models)
 
@@ -147,7 +135,7 @@ def check_ollama_status(
 def _ping_ollama(host: str = OLLAMA_BASE_URL) -> bool:
     """Check if HTTP service at host is alive."""
     try:
-        with urllib.request.urlopen(f"{host}/", timeout=2) as resp:
+        with urllib.request.urlopen(f"{host}/", timeout=2) as resp:  # noqa: S310
             return bool(resp.status == 200)
     except Exception:
         return False
@@ -166,25 +154,23 @@ def start_ollama_service() -> bool:
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
     try:
-        subprocess.Popen(
+        subprocess.Popen(  # noqa: S603
             [str(exe_path), "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=creation_flags,
         )
-        return True
     except Exception as exc:
         log_error(f"Failed to start Ollama service process: {exc}")
         return False
+    else:
+        return True
 
 
 def download_and_install_ollama(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bool, str]:
-    """Download official Ollama installer and launch it.
-
-    Returns ``(success: bool, message: str)``.
-    """
+    """Download official Ollama installer and launch it."""
     if progress_callback:
         progress_callback(10.0, "Connecting to Ollama download server...")
 
@@ -193,15 +179,13 @@ def download_and_install_ollama(
     installer_path = temp_dir / "OllamaSetup.exe"
 
     try:
-        req = urllib.request.Request(
-            OLLAMA_INSTALLER_URL, headers={"User-Agent": "DocSummarizer"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        req = urllib.request.Request(OLLAMA_INSTALLER_URL, headers={"User-Agent": "DocSummarizer"})
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             block_size = 1024 * 64
 
-            with open(installer_path, "wb") as out_file:
+            with installer_path.open("wb") as out_file:
                 while True:
                     chunk = resp.read(block_size)
                     if not chunk:
@@ -220,39 +204,33 @@ def download_and_install_ollama(
             progress_callback(85.0, "Launching Ollama installer...")
 
         log_info(f"Launching installer executable: {installer_path}")
-        subprocess.Popen([str(installer_path)])
-
-        if progress_callback:
-            progress_callback(
-                100.0, "Installer launched. Please complete installation wizard."
-            )
-        return True, "Installer launched successfully."
-
+        subprocess.Popen([str(installer_path)])  # noqa: S603
     except Exception as exc:
         log_error(f"Ollama download/install failed: {exc}")
         return False, f"Download failed: {exc}"
+    else:
+        if progress_callback:
+            progress_callback(100.0, "Installer launched. Please complete installation wizard.")
+        return True, "Installer launched successfully."
 
 
-def pull_ollama_model(
+def pull_ollama_model(  # noqa: PLR0912
     model_name: str = DEFAULT_OLLAMA_MODEL,
     progress_callback: Callable[[float, str], None] | None = None,
     host: str = OLLAMA_BASE_URL,
 ) -> tuple[bool, str]:
-    """Pull an AI model via HTTP API stream or CLI.
-
-    Returns ``(success: bool, message: str)``.
-    """
+    """Pull an AI model via HTTP API stream or CLI."""
     if progress_callback:
         progress_callback(5.0, f"Requesting model '{model_name}' download...")
 
     url = f"{host}/api/pull"
     payload = json.dumps({"name": model_name, "stream": True}).encode("utf-8")
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310
         url, data=payload, headers={"Content-Type": "application/json"}
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=600) as resp:
+        with urllib.request.urlopen(req, timeout=600) as resp:  # noqa: S310
             for line in resp:
                 line_str = line.decode("utf-8").strip()
                 if not line_str:
@@ -272,22 +250,15 @@ def pull_ollama_model(
                         progress_callback(50.0, f"{model_name}: {status_text}")
                 except json.JSONDecodeError:
                     pass
-
-        if progress_callback:
-            progress_callback(100.0, f"Model '{model_name}' successfully downloaded.")
-        return True, f"Model '{model_name}' ready."
-
     except Exception as exc:
-        log_info(
-            f"HTTP pull failed ({exc}), falling back to CLI 'ollama pull {model_name}'"
-        )
+        log_info(f"HTTP pull failed ({exc}), falling back to CLI 'ollama pull {model_name}'")
         exe_path = find_ollama_executable()
         if not exe_path:
             return False, f"Ollama not found to pull {model_name}"
 
         try:
             cmd = [str(exe_path), "pull", model_name]
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # noqa: S603
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
             if proc.stdout:
@@ -295,11 +266,16 @@ def pull_ollama_model(
                     if line.strip() and progress_callback:
                         progress_callback(50.0, f"Pulling: {line.strip()[:60]}")
             proc.wait()
+        except Exception as cli_exc:
+            log_error(f"CLI pull failed: {cli_exc}")
+            return False, str(cli_exc)
+        else:
             if proc.returncode == 0:
                 if progress_callback:
                     progress_callback(100.0, f"Model '{model_name}' downloaded.")
                 return True, f"Model '{model_name}' pulled."
             return False, f"CLI pull exited with code {proc.returncode}"
-        except Exception as cli_exc:
-            log_error(f"CLI pull failed: {cli_exc}")
-            return False, str(cli_exc)
+    else:
+        if progress_callback:
+            progress_callback(100.0, f"Model '{model_name}' successfully downloaded.")
+        return True, f"Model '{model_name}' ready."

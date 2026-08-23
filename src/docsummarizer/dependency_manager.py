@@ -57,14 +57,16 @@ def check_missing_dependencies(
     for mod_name in target_modules:
         try:
             importlib.import_module(mod_name)
-        except (ImportError, ModuleNotFoundError, AttributeError, Exception) as exc:
+        except Exception as exc:  # noqa: PERF203
             pip_pkg = MODULE_TO_PIP_MAP.get(mod_name, mod_name)
             log_info(f"Dependency check: module '{mod_name}' is missing ({exc})")
-            missing.append({
-                "module": mod_name,
-                "package": pip_pkg,
-                "reason": str(exc),
-            })
+            missing.append(
+                {
+                    "module": mod_name,
+                    "package": pip_pkg,
+                    "reason": str(exc),
+                }
+            )
 
     return missing
 
@@ -89,7 +91,7 @@ def install_package(
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
     try:
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # noqa: S603
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -108,20 +110,17 @@ def install_package(
 
         proc.wait(timeout=300)
         full_output = "\n".join(output_lines)
-
+    except Exception as exc:
+        log_error(f"Auto-installer: exception installing {package_name}: {exc}")
+        return False, str(exc)
+    else:
         if proc.returncode == 0:
             log_info(f"Auto-installer: successfully installed {package_name}")
             if progress_callback:
                 progress_callback(100.0, f"Successfully installed {package_name}")
             return True, full_output
-        log_error(
-            f"Auto-installer: pip install {package_name} failed code {proc.returncode}"
-        )
+        log_error(f"Auto-installer: pip install {package_name} failed code {proc.returncode}")
         return False, full_output or f"pip exited with status code {proc.returncode}"
-
-    except Exception as exc:
-        log_error(f"Auto-installer: exception installing {package_name}: {exc}")
-        return False, str(exc)
 
 
 def auto_install_missing_dependencies(
@@ -146,9 +145,7 @@ def auto_install_missing_dependencies(
 
         pct = (idx / total_count) * 90.0
         if progress_callback:
-            progress_callback(
-                pct, f"Installing required component {idx}/{total_count}: {pip_pkg}"
-            )
+            progress_callback(pct, f"Installing required component {idx}/{total_count}: {pip_pkg}")
 
         success, err_msg = install_package(pip_pkg, progress_callback)
         if success:
@@ -157,25 +154,27 @@ def auto_install_missing_dependencies(
                 importlib.invalidate_caches()
                 importlib.import_module(mod_name)
             except Exception as exc:
-                failed.append({
+                failed.append(
+                    {
+                        "module": mod_name,
+                        "package": pip_pkg,
+                        "reason": f"Import failed post-install: {exc}",
+                    }
+                )
+        else:
+            failed.append(
+                {
                     "module": mod_name,
                     "package": pip_pkg,
-                    "reason": f"Import failed post-install: {exc}",
-                })
-        else:
-            failed.append({
-                "module": mod_name,
-                "package": pip_pkg,
-                "reason": err_msg,
-            })
+                    "reason": err_msg,
+                }
+            )
 
     all_ok = len(failed) == 0
     if progress_callback:
         if all_ok:
             progress_callback(100.0, "All dependencies resolved and verified.")
         else:
-            progress_callback(
-                100.0, f"Dependency setup completed with {len(failed)} error(s)."
-            )
+            progress_callback(100.0, f"Dependency setup completed with {len(failed)} error(s).")
 
     return all_ok, failed
