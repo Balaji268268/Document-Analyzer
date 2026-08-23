@@ -117,7 +117,9 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                 filename = data.get("filename", "document.txt")
                 content_bytes = data.get("content_bytes", b"")
             else:
-                self._send_json({"error": "Please send JSON body with base64/text content."}, status=400)
+                self._send_json(
+                    {"error": "Please send JSON body with base64/text content."}, status=400
+                )
                 return
 
             # Extract text using document parser
@@ -128,12 +130,14 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             extracted_text = extract_text_from_file(tmp_path)
             tmp_path.unlink(missing_ok=True)
 
-            self._send_json({
-                "success": True,
-                "filename": filename,
-                "extracted_text": extracted_text,
-                "char_count": len(extracted_text),
-            })
+            self._send_json(
+                {
+                    "success": True,
+                    "filename": filename,
+                    "extracted_text": extracted_text,
+                    "char_count": len(extracted_text),
+                }
+            )
 
         except Exception as exc:
             log_error(f"Web API /api/parse error: {exc}")

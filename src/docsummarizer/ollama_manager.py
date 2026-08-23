@@ -181,7 +181,12 @@ def download_and_install_ollama(  # noqa: PLR0912, PLR0915
         if progress_callback:
             progress_callback(20.0, "Executing Linux Ollama installer script...")
         try:
-            res = subprocess.run(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"], capture_output=True, text=True, check=False)  # noqa: S607
+            res = subprocess.run(
+                ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )  # noqa: S607
         except Exception as exc:
             return False, f"Linux installation error: {exc}"
         else:
