@@ -560,25 +560,12 @@ class Summarizer:
 
     def __init__(
         self,
-        model_path: Path,
+        model_path: Path | str | None = None,
         n_ctx: int = 8192,
         n_threads: int | None = None,
         n_gpu_layers: int = 0,
     ):
-        """Initialize the summarizer with a model.
-
-        Args:
-            model_path: Path to the GGUF model file
-            n_ctx: Context window size (default 8192). Documents longer than
-                this are summarized via map-reduce chunking.
-            n_threads: Number of CPU threads. `None` = auto (half of available
-                cores). `0` means "let llama.cpp decide" and is passed through.
-            n_gpu_layers: Model layers to offload to the GPU. `0` (default)
-                keeps inference fully on the CPU for portability; `-1` offloads
-                all layers. Ignored by CPU-only llama-cpp builds.
-        """
-        from llama_cpp import Llama
-
+        """Initialize the summarizer with an optional GGUF model path or Ollama/extractive engine."""
         self.n_ctx = n_ctx
         cpu_count = os.cpu_count() or 8
         default_threads = max(4, cpu_count // 2)

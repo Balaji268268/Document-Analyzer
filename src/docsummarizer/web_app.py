@@ -157,12 +157,15 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             sentences = split_sentences(text)
 
+            summary_dict: dict[str, Any] = {}
             try:
                 from docsummarizer.model_manager import Summarizer
 
                 summarizer = Summarizer()
-                summary_dict = summarizer.summarize_structured(text, summary_type=summary_type)
-                summary_text = summary_dict.get("text", "")
+                raw_summary = summarizer.summarize_structured(text, summary_type=summary_type)
+                if isinstance(raw_summary, dict):
+                    summary_dict = dict(raw_summary)
+                summary_text = str(summary_dict.get("text", ""))
             except Exception as exc:
                 log_error(f"LLM Summarizer engine fallback: {exc}")
                 points: list[SummaryPoint] = []
@@ -183,18 +186,19 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             provenance: list[dict[str, object]] = []
             pts = summary_dict.get("points", [])
-            for pt in pts:
-                pt_text = pt.get("text", "") if isinstance(pt, dict) else str(pt)
-                if pt_text:
-                    span = locate_quote(pt_text, text, sentences)
-                    if span:
-                        provenance.append(
-                            {
-                                "summary_sentence": pt_text,
-                                "source_sentence": span.quote,
-                                "confidence": span.score,
-                            }
-                        )
+            if isinstance(pts, list):
+                for pt in pts:
+                    pt_text = pt.get("text", "") if isinstance(pt, dict) else str(pt)
+                    if pt_text:
+                        span = locate_quote(pt_text, text, sentences)
+                        if span:
+                            provenance.append(
+                                {
+                                    "summary_sentence": pt_text,
+                                    "source_sentence": span.quote,
+                                    "confidence": span.score,
+                                }
+                            )
 
             history_item = {
                 "id": f"doc_{uuid.uuid4().hex[:8]}",
