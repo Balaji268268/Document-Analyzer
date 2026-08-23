@@ -69,7 +69,7 @@ jobs:
         run: pip install -e ".[runtime,gui]" pyinstaller
 
       - name: Build executable package
-        run: pyinstaller --noconfirm --onedir --windowed --name "DocSummarizer" --paths "src" run.py
+        run: pyinstaller --noconfirm DocSummarizer.spec
 
       - name: Compress release artifact (Windows)
         if: runner.os == 'Windows'
