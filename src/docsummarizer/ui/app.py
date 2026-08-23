@@ -88,8 +88,8 @@ def main() -> int:
 
         web_thread = threading.Thread(
             target=run_web_server,
-            kwargs={"port": 8081, "host": "0.0.0.0"},
-            daemon=True,  # noqa: S104
+            kwargs={"port": 8081, "host": "0.0.0.0"},  # noqa: S104
+            daemon=True,
         )
         web_thread.start()
     except Exception as exc:
