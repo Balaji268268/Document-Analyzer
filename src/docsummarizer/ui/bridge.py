@@ -195,8 +195,8 @@ class ConsoleBridge(QObject):
         pass_clean = password.strip()
         valid_user = user_clean.lower() in ("admin", "user")
         valid_pass = (
-            pass_clean in ("admin", "user", "password") or pass_clean == "admin" or not pass_clean
-        )  # noqa: S105
+            pass_clean in ("admin", "user", "password") or pass_clean == "admin" or not pass_clean  # noqa: S105
+        )
         if valid_user and valid_pass:
             self._authenticated = True
             self.authenticatedChanged.emit()
