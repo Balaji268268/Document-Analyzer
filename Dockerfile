@@ -1,4 +1,4 @@
-# Dockerfile for DocSummarizer Web Streaming (DigitalOcean & Cloud Deployment)
+# Dockerfile for DocSummarizer Web Streaming (Render, DigitalOcean, Azure, Cloud Deployment)
 FROM python:3.11-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,8 +8,9 @@ ENV QT_QPA_PLATFORM=xcb
 
 WORKDIR /app
 
-# Install system dependencies: Linux Qt libraries, Xvfb, Openbox, x11vnc, noVNC
+# Install system dependencies: Linux Qt libraries, procps, Xvfb, Openbox, x11vnc, noVNC
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    procps \
     xvfb \
     x11vnc \
     openbox \
@@ -35,11 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy project files
 COPY . /app
 
-# Install Python package dependencies
+# Install Python package dependencies including GUI extras (PySide6)
 RUN python -m pip install --upgrade pip && \
-    python -m pip install -e .
+    python -m pip install -e ".[gui]"
 
-# Expose web streaming port for DigitalOcean & cloud hosting
+# Expose web streaming port for cloud hosting
 EXPOSE 8080
 
 RUN chmod +x /app/start.sh
