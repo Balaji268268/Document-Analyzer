@@ -15,7 +15,7 @@ from http import HTTPStatus
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 # Ensure src/ is on Python path
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -23,10 +23,10 @@ PACKAGE_ROOT = CURRENT_DIR.parent
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-from docsummarizer.document_parser import extract_text_from_file
-from docsummarizer.logger import log_error, log_info
-from docsummarizer.provenance import compute_provenance
-from docsummarizer.structured_summary import generate_structured_summary
+from docsummarizer.document_parser import extract_text_from_file  # noqa: E402
+from docsummarizer.logger import log_error, log_info  # noqa: E402
+from docsummarizer.provenance import compute_provenance  # noqa: E402
+from docsummarizer.structured_summary import generate_structured_summary  # noqa: E402
 
 WEB_STATIC_DIR = CURRENT_DIR / "web"
 
@@ -46,7 +46,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         """Handle GET requests for web pages and static assets."""
         parsed = urlparse(self.path)
-        if parsed.path == "/" or parsed.path == "/index.html":
+        if parsed.path in ("/", "/index.html"):
             self._serve_file(WEB_STATIC_DIR / "index.html", "text/html; charset=utf-8")
             return
         if parsed.path == "/api/health":
@@ -86,7 +86,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             # Generate structured summary
             summary = generate_structured_summary(text, summary_type=summary_type)
-            
+
             # Compute sentence grounding citations
             provenance = compute_provenance(text, summary.to_text())
 
@@ -150,12 +150,11 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(self, format_spec: str, *args: object) -> None:
         """Suppress noisy default HTTP logging."""
-        pass
 
 
-def run_web_server(port: int = 8080, host: str = "0.0.0.0") -> None:
+def run_web_server(port: int = 8080, host: str = "0.0.0.0") -> None:  # noqa: S104
     """Run the threaded HTTP web server."""
     WEB_STATIC_DIR.mkdir(parents=True, exist_ok=True)
     server_address = (host, port)
@@ -170,5 +169,5 @@ def run_web_server(port: int = 8080, host: str = "0.0.0.0") -> None:
 
 
 if __name__ == "__main__":
-    port_env = int(os.environ.get("PORT", 8080))
+    port_env = int(os.environ.get("PORT", "8080"))
     run_web_server(port=port_env)
