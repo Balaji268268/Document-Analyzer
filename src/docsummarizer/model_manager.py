@@ -813,7 +813,9 @@ class Summarizer:
         Returns:
             The generated summary
         """
-        if self._closed or (self.llm is None and not self.use_ollama):
+        if getattr(self, "_closed", False) or (
+            self.llm is None and not getattr(self, "use_ollama", False)
+        ):
             raise RuntimeError(_CLOSED_MESSAGE)
 
         self._cancel_check = should_cancel
@@ -882,7 +884,9 @@ class Summarizer:
         plain ``summarize`` output, so this never hard-fails. ``summarize`` (the
         ``-> str`` API the CLI uses) is unchanged.
         """
-        if getattr(self, "_closed", False):
+        if getattr(self, "_closed", False) or (
+            self.llm is None and not getattr(self, "use_ollama", False)
+        ):
             raise RuntimeError(_CLOSED_MESSAGE)
 
         # NB: do not strip — citation offsets must index the caller's exact text
