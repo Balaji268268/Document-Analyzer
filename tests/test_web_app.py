@@ -88,7 +88,8 @@ def test_web_handler_summarize_model_guard(monkeypatch: pytest.MonkeyPatch) -> N
     """Test /api/summarize POST endpoint returns 400 when model is missing."""
     monkeypatch.setattr("docsummarizer.model_manager.is_model_downloaded", lambda: False)
     monkeypatch.setattr(
-        "docsummarizer.ollama_manager.check_ollama_status", lambda: ("STOPPED", "Offline")
+        "docsummarizer.ollama_manager.check_ollama_status",
+        lambda: {"code": "STOPPED", "message": "Offline"},
     )
     handler = MagicMock()
     mock_session = MagicMock()

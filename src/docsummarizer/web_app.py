@@ -154,8 +154,8 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             from docsummarizer.model_manager import is_model_downloaded
             from docsummarizer.ollama_manager import OLLAMA_STATUS_READY, check_ollama_status
 
-            ollama_code, _ = check_ollama_status()
-            if not is_model_downloaded() and ollama_code != OLLAMA_STATUS_READY:
+            ollama_info = check_ollama_status()
+            if not is_model_downloaded() and ollama_info.get("code") != OLLAMA_STATUS_READY:
                 self._send_json(
                     {
                         "error": "Please download/load the AI model first before summarizing documents."
