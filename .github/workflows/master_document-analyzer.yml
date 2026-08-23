@@ -37,7 +37,10 @@ jobs:
           file: ./Dockerfile
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
         with:
-          images: 'ghcr.io/balaji268268/document-analyzer:latest'
+          app-name: 'document-analyzer'
+          slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D54E27C6A257418883FF3A874D45C0FD }}
+          images: 'ghcr.io/balaji268268/document-analyzer:latest'
