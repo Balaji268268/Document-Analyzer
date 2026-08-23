@@ -39,6 +39,6 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'document-analyzer'
+          app-name: 'document-analyzer-babyc6djcccuczhj'
           images: 'ghcr.io/balaji268268/document-analyzer:latest'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D54E27C6A257418883FF3A874D45C0FD }}
