@@ -582,7 +582,11 @@ class ConsoleBridge(QObject):
 
     @Slot()
     def summarize(self) -> None:
-        if not is_model_downloaded() and self._ollama_status_code != "ONLINE":
+        if not is_model_downloaded() and self._ollama_status_code not in (
+            ollama_manager.OLLAMA_STATUS_READY,
+            "READY",
+            "ONLINE",
+        ):
             err_msg = "Please download/load the AI model first before summarizing documents."
             self.toast.emit(err_msg)
             self.summaryError.emit(err_msg)
