@@ -55,9 +55,9 @@ def find_ollama_executable() -> Path | None:
 def get_available_ollama_models(host: str = OLLAMA_BASE_URL) -> list[str]:
     """Query the Ollama API (/api/tags) for currently installed models."""
     url = f"{host}/api/tags"
-    req = urllib.request.Request(url, headers={"User-Agent": "DocSummarizer"})  # noqa: S310
+    req = urllib.request.Request(url, headers={"User-Agent": "DocSummarizer"})
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=3) as resp:
             if resp.status == 200:
                 data = json.loads(resp.read().decode("utf-8"))
                 models = data.get("models", [])
@@ -135,7 +135,7 @@ def check_ollama_status(
 def _ping_ollama(host: str = OLLAMA_BASE_URL) -> bool:
     """Check if HTTP service at host is alive."""
     try:
-        with urllib.request.urlopen(f"{host}/", timeout=2) as resp:  # noqa: S310
+        with urllib.request.urlopen(f"{host}/", timeout=2) as resp:
             return bool(resp.status == 200)
     except Exception:
         return False
@@ -180,7 +180,7 @@ def download_and_install_ollama(
 
     try:
         req = urllib.request.Request(OLLAMA_INSTALLER_URL, headers={"User-Agent": "DocSummarizer"})
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=30) as resp:
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             block_size = 1024 * 64
@@ -225,12 +225,10 @@ def pull_ollama_model(  # noqa: PLR0912
 
     url = f"{host}/api/pull"
     payload = json.dumps({"name": model_name, "stream": True}).encode("utf-8")
-    req = urllib.request.Request(  # noqa: S310
-        url, data=payload, headers={"Content-Type": "application/json"}
-    )
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
 
     try:
-        with urllib.request.urlopen(req, timeout=600) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=600) as resp:
             for line in resp:
                 line_str = line.decode("utf-8").strip()
                 if not line_str:

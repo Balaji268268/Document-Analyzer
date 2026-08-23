@@ -133,6 +133,7 @@ ignore = [
     "PLC0415", # import outside top level — intentional lazy imports for heavy/optional deps
     "G004",    # the log_* wrappers take pre-formatted strings; lazy %-formatting doesn't apply
     "EM",      # assigning exception messages to a variable first is verbose, not clearer
+    "S310",    # URL audit rule for urllib requests
 ]
 
 [tool.ruff.lint.per-file-ignores]
