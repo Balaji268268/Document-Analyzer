@@ -6,6 +6,8 @@ import io
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from docsummarizer.web_app import DocSummarizerWebHandler
 
 
