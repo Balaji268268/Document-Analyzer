@@ -50,7 +50,11 @@ def find_ollama_executable() -> Path | None:
         if candidate_pf.exists():
             return candidate_pf
     else:
-        candidates = [Path("/usr/local/bin/ollama"), Path("/usr/bin/ollama")]
+        candidates = [
+            Path.home() / ".local" / "bin" / "ollama",
+            Path("/usr/local/bin/ollama"),
+            Path("/usr/bin/ollama"),
+        ]
         for cand in candidates:
             if cand.exists():
                 return cand
@@ -196,15 +200,39 @@ def _install_ollama_linux(
             text=True,
             check=False,
         )
-    except Exception as exc:
-        return False, f"Linux installation error: {exc}"
-    else:
         if res.returncode == 0:
+            start_ollama_service()
             if progress_callback:
                 progress_callback(100.0, "Ollama installed successfully!")
             return True, "Ollama installed successfully."
-        output_msg = res.stderr.strip() or res.stdout.strip()
-        return False, f"Installation script failed: {output_msg}"
+    except Exception as exc:
+        log_info(f"Linux install.sh execution failed: {exc}")
+
+    # Fallback for rootless containers/Render: download standalone user-space Ollama binary
+    if progress_callback:
+        progress_callback(50.0, "Downloading standalone user-space Ollama binary...")
+
+    try:
+        user_bin_dir = Path.home() / ".local" / "bin"
+        user_bin_dir.mkdir(parents=True, exist_ok=True)
+        tar_path = Path(tempfile.gettempdir()) / "ollama-linux-amd64.tgz"
+
+        dl_cmd = f"curl -fsSL https://ollama.com/download/ollama-linux-amd64.tgz -o {tar_path} && tar -C {user_bin_dir} -xzf {tar_path}"
+        res_user = subprocess.run(  # noqa: S603
+            ["sh", "-c", dl_cmd],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res_user.returncode == 0:
+            start_ollama_service()
+            if progress_callback:
+                progress_callback(100.0, "Standalone Ollama binary installed!")
+            return True, "Standalone Ollama binary installed successfully."
+        output_msg = res_user.stderr.strip() or res_user.stdout.strip()
+        return False, f"Ollama installation failed: {output_msg}"
+    except Exception as exc:
+        return False, f"User-space installation error: {exc}"
 
 
 def _install_ollama_windows(

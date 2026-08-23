@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install Ollama engine for Linux container hosting
-RUN curl -fsSL https://ollama.com/install.sh | sh || true
+RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Copy project files
 COPY . /app
