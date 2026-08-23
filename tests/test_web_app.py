@@ -133,6 +133,5 @@ def test_web_handler_summarize_exception_handling() -> None:
 
     DocSummarizerWebHandler._handle_summarize(handler)
     handler._send_json.assert_called_once()
-    args, kwargs = handler._send_json.call_args
+    _args, kwargs = handler._send_json.call_args
     assert kwargs.get("status") == 500
-
