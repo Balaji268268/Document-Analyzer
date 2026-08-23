@@ -190,20 +190,21 @@ def _install_ollama_linux(
         cmd = "curl -fsSL https://ollama.com/install.sh | sudo -E sh"
 
     try:
-        res = subprocess.run(
+        res = subprocess.run(  # noqa: S603
             ["sh", "-c", cmd],  # noqa: S607
             capture_output=True,
             text=True,
             check=False,
         )
+    except Exception as exc:
+        return False, f"Linux installation error: {exc}"
+    else:
         if res.returncode == 0:
             if progress_callback:
                 progress_callback(100.0, "Ollama installed successfully!")
             return True, "Ollama installed successfully."
         output_msg = res.stderr.strip() or res.stdout.strip()
         return False, f"Installation script failed: {output_msg}"
-    except Exception as exc:
-        return False, f"Linux installation error: {exc}"
 
 
 def _install_ollama_windows(
