@@ -444,8 +444,9 @@ def get_models_directory() -> Path:
 
 
 def is_model_downloaded(model_config: ModelConfig = DEFAULT_MODEL) -> bool:
-    """Check if the model file exists locally."""
-    return (get_models_directory() / model_config.filename).exists()
+    """Check if the model file exists locally and is fully downloaded (>100MB)."""
+    model_path = get_models_directory() / model_config.filename
+    return model_path.exists() and model_path.stat().st_size > (100 * 1024 * 1024)
 
 
 def get_model_path(model_config: ModelConfig = DEFAULT_MODEL) -> Path:

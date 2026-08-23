@@ -63,4 +63,4 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software
-        run: xvfb-run --auto-servernum pytest -ra -k "not test_ui_qml" --cov=docsummarizer --cov-report=term-missing
+        run: xvfb-run --auto-servernum pytest -ra --cov=docsummarizer --cov-report=term-missing
