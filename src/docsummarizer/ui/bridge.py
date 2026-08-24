@@ -245,7 +245,7 @@ class ConsoleBridge(QObject):
         if stored_hash:
             valid = stored_hash == _hash_password(pass_clean)
         elif user_clean.lower() in ("admin", "user") and (
-            pass_clean in ("admin", "user") or not pass_clean  # noqa: S105
+            pass_clean in ("admin", "user") or not pass_clean
         ):
             valid = True
 
