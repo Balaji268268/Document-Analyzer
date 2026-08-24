@@ -34,8 +34,8 @@ Rectangle {
 
     Rectangle {
         id: card
-        width: Math.min(parent.width - 40, 680)
-        height: Math.min(parent.height - 60, 560)
+        width: Math.min(parent.width - 40, 700)
+        height: Math.min(parent.height - 60, 580)
         anchors.centerIn: parent
         color: Theme.block
         radius: 12
@@ -116,7 +116,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "📁 UPLOAD FILE"
+                        text: "📁 UPLOAD & IMPORT"
                         color: modal.activeTab === 0 ? Theme.onAccent : Theme.text
                         font.family: Theme.mono
                         font.pixelSize: 11
@@ -163,65 +163,94 @@ Rectangle {
                 color: Theme.line2
             }
 
-            // Tab 0: Upload View
+            // Tab 0: Upload Guidance & Local Explorer
             ColumnLayout {
                 visible: modal.activeTab === 0
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 16
+                spacing: 14
 
+                // Cloud Browser Direct Upload Banner
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 140
+                    radius: 8
+                    color: Qt.rgba(0.06, 0.72, 0.51, 0.08)
+                    border.color: Theme.accent
+                    border.width: 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 8
+
+                        RowLayout {
+                            spacing: 8
+                            Text {
+                                text: "🌐"
+                                font.pixelSize: 16
+                            }
+                            Text {
+                                text: "HOW TO UPLOAD FILES FROM YOUR COMPUTER"
+                                color: Theme.accent
+                                font.family: Theme.mono
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                                font.letterSpacing: 1
+                            }
+                        }
+
+                        Text {
+                            text: "• Click the glowing green [ 📁 UPLOAD FILE FROM YOUR PC ] button in the top-right corner of your browser window.\n• Or simply drag and drop any PDF, DOCX, TXT, or Image file directly onto your browser window."
+                            color: Theme.ink
+                            font.family: Theme.body
+                            font.pixelSize: 13
+                            lineHeight: 1.3
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
+                // Native local files option
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
+                    radius: 8
                     color: Theme.pageBg
                     border.color: Theme.line2
                     border.width: 1
 
                     ColumnLayout {
                         anchors.centerIn: parent
-                        spacing: 12
+                        spacing: 10
 
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: "📄"
-                            font.pixelSize: 42
-                        }
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Upload or Select Document"
-                            color: Theme.ink
+                            text: "🖥️ Native Desktop Picker"
+                            color: Theme.text
                             font.family: Theme.serif
-                            font.pixelSize: 16
+                            font.pixelSize: 15
                             font.weight: Font.Bold
                         }
 
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Supported: PDF · DOCX · RTF · TXT · MD · PNG · JPG"
+                            text: "For local desktop execution (run.bat)"
                             color: Theme.faint
                             font.family: Theme.mono
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                         }
 
-                        Item { height: 8 }
-
-                        RowLayout {
+                        ConsoleButton {
                             Layout.alignment: Qt.AlignHCenter
-                            spacing: 12
-
-                            ConsoleButton {
-                                text: "BROWSE FILES"
-                                primary: true
-                                onClicked: nativeFileDialog.open()
-                            }
+                            text: "OPEN LOCAL FILE PICKER"
+                            onClicked: nativeFileDialog.open()
                         }
                     }
                 }
 
                 Text {
-                    text: "👤 Authenticated as: " + (bridge.currentUser ? bridge.currentUser : "admin") + " (All uploads and summaries are saved to your private history)"
+                    text: "👤 Logged in as: " + (bridge.currentUser ? bridge.currentUser : "admin") + " · Isolated private session"
                     color: Theme.dim
                     font.family: Theme.mono
                     font.pixelSize: 10

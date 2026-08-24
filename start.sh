@@ -17,13 +17,19 @@ if command -v ollama >/dev/null 2>&1; then
     sleep 2
 fi
 
-# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar
-if [ -f "/usr/share/novnc/vnc.html" ]; then
-    cat <<'EOF' > /tmp/upload_snippet.html
-<div id="quick-upload-bar" style="position:fixed;top:8px;right:60px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.88);backdrop-filter:blur(8px);border:1px solid #10b981;border-radius:8px;padding:6px 14px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;">
-  <button id="upload-from-pc-btn" style="background:#10b981;color:#0f172a;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px;" onclick="document.getElementById('pc-file-input').click()">📁 Upload From Computer</button>
+# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar + Drag-and-Drop
+python3 - <<'PYEOF'
+from pathlib import Path
+for name in ["vnc.html", "vnc_lite.html", "index.html"]:
+    p = Path("/usr/share/novnc") / name
+    if p.exists():
+        html = p.read_text(encoding="utf-8", errors="ignore")
+        snippet = """
+<!-- Cloud Direct PC Upload Overlay -->
+<div id="quick-upload-bar" style="position:fixed;top:10px;right:70px;z-index:999999;display:flex;align-items:center;gap:10px;background:#0d1820;border:2px solid #10b981;border-radius:8px;padding:8px 16px;box-shadow:0 6px 20px rgba(0,0,0,0.8);font-family:system-ui,sans-serif;">
+  <button id="upload-from-pc-btn" style="background:#10b981;color:#0d1820;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:800;font-size:13px;letter-spacing:0.5px;" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FILE FROM YOUR PC</button>
   <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
-  <span id="upload-feedback" style="color:#6ee7b7;font-size:11px;font-weight:500;"></span>
+  <span id="upload-feedback" style="color:#6ee7b7;font-size:12px;font-weight:600;"></span>
 </div>
 <script>
 function uploadLocalDocument(input) {
@@ -37,22 +43,33 @@ function uploadLocalDocument(input) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        feedback.textContent = '✅ ' + file.name + ' loaded!';
+        feedback.textContent = '✅ ' + file.name + ' Loaded into App!';
       } else {
         feedback.textContent = '❌ ' + (data.error || 'Upload failed');
       }
-      setTimeout(function() { feedback.textContent = ''; }, 5000);
+      setTimeout(function() { feedback.textContent = ''; }, 6000);
     })
     .catch(function(err) {
-      feedback.textContent = '❌ Upload failed: ' + err;
+      feedback.textContent = '❌ Error: ' + err;
     });
 }
+// Global drag-and-drop listener
+window.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
+window.addEventListener('drop', function(e) {
+  e.preventDefault();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    document.getElementById('pc-file-input').files = e.dataTransfer.files;
+    uploadLocalDocument(document.getElementById('pc-file-input'));
+  }
+}, false);
 </script>
-EOF
-    sed -i '/<\/body>/e cat /tmp/upload_snippet.html' /usr/share/novnc/vnc.html 2>/dev/null || true
+"""
+        if "quick-upload-bar" not in html:
+            html = html.replace("</body>", snippet + "\n</body>")
+            p.write_text(html, encoding="utf-8")
+PYEOF
+if [ -f "/usr/share/novnc/vnc.html" ]; then
     cp /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
-elif [ -f "/usr/share/novnc/vnc_lite.html" ]; then
-    cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html 2>/dev/null || true
 fi
 
 # 3. Start virtual Xvfb display
