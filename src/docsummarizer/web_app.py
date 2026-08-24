@@ -114,6 +114,9 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/parse":
             self._handle_parse_file()
             return
+        if parsed.path == "/api/upload":
+            self._handle_upload()
+            return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
 
@@ -290,6 +293,79 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             log_error(f"Web API /api/parse error: {exc}")
             self._send_json(
                 {"error": f"Failed to parse document: {exc}"},
+                status=500,
+                session_id=session.session_id,
+            )
+
+    def _handle_upload(self) -> None:
+        """Handle raw or multipart file uploads from web client into the app."""
+        session = self._get_session()
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            content_length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(content_length)
+
+            upload_base = (
+                Path("/tmp/docsummarizer/uploads")
+                if os.name != "nt"
+                else Path(tempfile.gettempdir()) / "docsummarizer" / "uploads"
+            )
+            upload_base.mkdir(parents=True, exist_ok=True)
+
+            filename = "uploaded_document.pdf"
+            file_data = b""
+
+            if "multipart/form-data" in content_type:
+                boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
+                boundary = boundary_match.group(1).encode("utf-8") if boundary_match else b""
+                if boundary:
+                    parts = raw_body.split(b"--" + boundary)
+                    for part in parts:
+                        if b"filename=" in part:
+                            header_part, body_part = part.split(b"\r\n\r\n", 1)
+                            fn_match = re.search(
+                                r'filename="([^"]+)"',
+                                header_part.decode("utf-8", errors="ignore"),
+                            )
+                            if fn_match:
+                                filename = fn_match.group(1)
+                            file_data = body_part.rstrip(b"\r\n")
+                            break
+            else:
+                try:
+                    data = json.loads(raw_body.decode("utf-8"))
+                    filename = str(data.get("filename", "document.pdf"))
+                    content_str = str(data.get("content", ""))
+                    import base64
+
+                    file_data = base64.b64decode(content_str) if content_str else b""
+                except Exception:
+                    file_data = raw_body
+
+            clean_filename = Path(filename).name
+            target_path = upload_base / clean_filename
+            with target_path.open("wb") as fp:
+                fp.write(file_data)
+
+            # Write trigger file for bridge QTimer IPC
+            trigger_file = upload_base / "latest_upload.txt"
+            with trigger_file.open("w", encoding="utf-8") as fp:
+                fp.write(str(target_path.resolve()))
+
+            log_info(f"Web API: Uploaded file '{clean_filename}' saved to '{target_path}'")
+            self._send_json(
+                {
+                    "success": True,
+                    "filename": clean_filename,
+                    "path": str(target_path),
+                    "bytes": len(file_data),
+                },
+                session_id=session.session_id,
+            )
+        except Exception as exc:
+            log_error(f"Web API /api/upload error: {exc}")
+            self._send_json(
+                {"error": f"Upload failed: {exc}"},
                 status=500,
                 session_id=session.session_id,
             )

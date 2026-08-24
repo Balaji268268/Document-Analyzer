@@ -21,7 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QMutex, QObject, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QMutex, QObject, QThreadPool, QTimer, QUrl, Signal, Slot
 
 from docsummarizer import dependency_manager, document_parser, ollama_manager
 from docsummarizer.io_helpers import write_summary_docx, write_summary_txt
@@ -216,6 +216,35 @@ class ConsoleBridge(QObject):
         # Qt Property has a single NOTIFY; re-fire docChanged on model changes so
         # the Summarize/Save buttons re-evaluate when the model finishes loading.
         self.modelReadyChanged.connect(self.docChanged)
+
+        if not self._synchronous:
+            upload_base = (
+                Path("/tmp/docsummarizer/uploads") if os.name != "nt" else app_data_dir("uploads")
+            )
+            try:
+                upload_base.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                log_debug(f"Could not create upload directory: {exc}")
+            self._upload_dir = upload_base
+            self._ipc_timer = QTimer(self)
+            self._ipc_timer.setInterval(500)
+            self._ipc_timer.timeout.connect(self._check_pending_upload)
+            self._ipc_timer.start()
+
+    def _check_pending_upload(self) -> None:
+        """Poll for newly uploaded files from the web browser/API layer."""
+        if not hasattr(self, "_upload_dir"):
+            return
+        trigger_file = self._upload_dir / "latest_upload.txt"
+        if trigger_file.exists():
+            try:
+                target_path = trigger_file.read_text(encoding="utf-8").strip()
+                trigger_file.unlink(missing_ok=True)
+                if target_path and Path(target_path).exists():
+                    log_info(f"IPC Upload Trigger: Loading uploaded document '{target_path}'")
+                    self.loadDocument(target_path)
+            except Exception as exc:
+                log_debug(f"IPC upload check: {exc}")
 
     authenticatedChanged = Signal()
     currentUserChanged = Signal()

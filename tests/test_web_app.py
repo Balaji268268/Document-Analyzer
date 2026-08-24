@@ -221,6 +221,30 @@ def test_web_handler_parse_file_multipart_error() -> None:
     )
 
 
+def test_web_handler_upload_endpoint() -> None:
+    """Test /api/upload POST endpoint processes uploaded files."""
+    handler = MagicMock()
+    mock_session = MagicMock()
+    mock_session.session_id = "sess-upload"
+    handler._get_session.return_value = mock_session
+
+    mock_payload = json.dumps({"filename": "test.txt", "content": "VGVzdCBjb250ZW50"}).encode(
+        "utf-8"
+    )
+    handler.headers = {
+        "Content-Type": "application/json",
+        "Content-Length": str(len(mock_payload)),
+    }
+    handler.rfile = io.BytesIO(mock_payload)
+
+    DocSummarizerWebHandler._handle_upload(handler)
+    handler._send_json.assert_called_once()
+    args, kwargs = handler._send_json.call_args
+    assert args[0]["success"] is True
+    assert args[0]["filename"] == "test.txt"
+    assert kwargs.get("session_id") == "sess-upload"
+
+
 def test_web_handler_summarize_exception_handling() -> None:
     """Test _handle_summarize catches exceptions and returns 500 status."""
     handler = MagicMock()

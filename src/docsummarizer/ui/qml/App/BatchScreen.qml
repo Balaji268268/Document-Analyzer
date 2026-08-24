@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import QtCore
 import App
 
 // Batch queue: pick a folder + output dir, process all supported docs, and watch
