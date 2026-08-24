@@ -256,14 +256,14 @@ class ConsoleBridge(QObject):
 
     def _check_pending_upload(self) -> None:
         """Poll for newly uploaded files from the web browser/API layer."""
-        if not hasattr(self, "_upload_dir"):
+        if not hasattr(self, "_upload_dir") or self._busy:
             return
         trigger_file = self._upload_dir / "latest_upload.txt"
         if trigger_file.exists():
             try:
                 target_path = trigger_file.read_text(encoding="utf-8").strip()
-                trigger_file.unlink(missing_ok=True)
                 if target_path and Path(target_path).exists():
+                    trigger_file.unlink(missing_ok=True)
                     log_info(f"IPC Upload Trigger: Loading uploaded document '{target_path}'")
                     self.loadDocument(target_path)
             except Exception as exc:
@@ -282,6 +282,33 @@ class ConsoleBridge(QObject):
     def currentUser(self) -> str:
         """The currently authenticated username."""
         return self._current_user
+
+    @Property(list, notify=docChanged)
+    def recentUploads(self) -> list[dict[str, str]]:
+        """Return list of recently uploaded files in the container upload directory."""
+        upload_dir = app_data_dir("uploads")
+        if not upload_dir.exists():
+            return []
+        supported_exts = {".pdf", ".docx", ".rtf", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+        files: list[dict[str, str]] = []
+        try:
+            for p in sorted(upload_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in supported_exts
+                    and p.name != "latest_upload.txt"
+                ):
+                    size_kb = round(p.stat().st_size / 1024, 1)
+                    files.append(
+                        {
+                            "name": p.name,
+                            "path": str(p.resolve()),
+                            "size": f"{size_kb} KB",
+                        }
+                    )
+        except Exception as exc:
+            log_debug(f"Recent uploads scan: {exc}")
+        return files[:20]
 
     @Property(list, notify=userHistoryChanged)
     def userHistory(self) -> list[dict[str, Any]]:
@@ -784,9 +811,11 @@ class ConsoleBridge(QObject):
             if error:
                 self._extracted_text = ""
                 self._finish(error, "error")
+                self.toast.emit(f"Failed to load: {error}")
             else:
                 self._extracted_text = text
                 self._finish("Text extracted")
+                self.toast.emit(f"Loaded: {self._current_file}")
             self.docChanged.emit()
 
         self._run(work, done)
@@ -812,14 +841,7 @@ class ConsoleBridge(QObject):
 
     @Slot()
     def summarize(self) -> None:
-        if not is_model_downloaded() and self._ollama_status_code not in (
-            ollama_manager.OLLAMA_STATUS_READY,
-            "READY",
-            "ONLINE",
-        ):
-            err_msg = "Please download/load the AI model first before summarizing documents."
-            self.toast.emit(err_msg)
-            self.summaryError.emit(err_msg)
+        if not self._extracted_text or self._busy:
             return
 
         summarizer = self._get_summarizer()
