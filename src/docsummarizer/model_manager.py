@@ -565,20 +565,20 @@ def _extract_doc_sentences(messages: list[dict[str, str]]) -> list[str]:
         doc_body = prompt_str.split("Section summaries:\n", 1)[1].strip()
 
     raw_spans = split_sentences(doc_body)
-    raw_sentences = [doc_body[start:end].strip() for start, end in raw_spans]
+    raw_sentences = [re.sub(r"\s+", " ", doc_body[start:end]).strip() for start, end in raw_spans]
     sentences = [
         s
         for s in raw_sentences
-        if len(s) > 30
+        if len(s) > 25
         and not s.startswith(
             ("-", "*", "#", "TABLE OF CONTENTS", "Analyze the document", "Summarize the document")
         )
     ]
     if not sentences:
         sentences = [
-            line.strip()
+            re.sub(r"\s+", " ", line).strip()
             for line in doc_body.splitlines()
-            if len(line.strip()) > 25
+            if len(line.strip()) > 20
             and not line.strip().startswith(("-", "*", "#", "Analyze", "Summarize"))
         ]
     return sentences

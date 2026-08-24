@@ -388,7 +388,7 @@ Item {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 16
-                    spacing: 10
+                    spacing: 8
                     opacity: bridge.busy ? 0 : 1
                     Behavior on opacity {
                         NumberAnimation {
@@ -413,194 +413,212 @@ Item {
                         }
                     }
 
-                    // Lead (Detailed + Brief)
-                    Text {
-                        visible: String(screen.summary.lead) !== ""
-                        Layout.fillWidth: true
-                        text: screen.summary.lead
-                        wrapMode: Text.WordWrap
-                        color: Theme.ink
-                        font.family: Theme.serif
-                        font.pixelSize: screen.summary.summaryType === "brief" ? 21 : 19
-                        lineHeight: 1.35
-                    }
-
-                    // Detailed: key-point rows with hex markers
-                    ListView {
-                        visible: screen.summary.summaryType === "detailed"
+                    // Scrollable area for all summary content
+                    Flickable {
+                        id: summaryFlick
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        spacing: 8
-                        model: screen.summary.points
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-                            width: ListView.view ? ListView.view.width : 0
-                            height: kpRow.implicitHeight + 22
-                            radius: 3
-                            color: index === screen.activePoint ? Theme.navOnBg : Theme.kpRest
-                            border.width: 1
-                            border.color: index === screen.activePoint ? Theme.navOnRing : Theme.line
-                            RowLayout {
-                                id: kpRow
-                                x: 12
-                                y: 11
-                                width: parent.width - 24
-                                spacing: 12
-                                Hex {
-                                    size: 24
-                                    glyph: String(index + 1).padStart(2, "0")
-                                    glyphSize: 10
-                                    accentInner: index === screen.activePoint
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 3
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: modelData.text
-                                        color: Theme.inkSoft
-                                        font.family: Theme.ui
-                                        font.pixelSize: 14
-                                        font.weight: Font.Medium
-                                        wrapMode: Text.WordWrap
-                                    }
-                                    Text {
-                                        visible: modelData.hasCitation
-                                        text: "▸ traces to source"
-                                        color: Theme.accent
-                                        font.family: Theme.mono
-                                        font.pixelSize: 9
-                                        font.letterSpacing: 0.8
-                                    }
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    screen.activePoint = index;
-                                    screen.trace(modelData);
-                                }
-                            }
+                        contentWidth: width
+                        contentHeight: summaryContentCol.implicitHeight
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
                         }
-                    }
 
-                    // Structured: PURPOSE / METHOD / RESULTS / CONCLUSIONS
-                    ColumnLayout {
-                        visible: screen.summary.summaryType === "structured"
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        spacing: 12
-                        Repeater {
-                            model: ["PURPOSE", "METHOD", "RESULTS", "CONCLUSIONS"]
-                            delegate: Rectangle {
-                                required property string modelData
-                                property var pts: (screen.summary.sections && screen.summary.sections[modelData]) ? screen.summary.sections[modelData] : []
-                                property var firstPt: pts.length > 0 ? pts[0] : null
-                                property bool traceable: firstPt && firstPt.hasCitation
-                                visible: pts.length > 0
+                        ColumnLayout {
+                            id: summaryContentCol
+                            width: summaryFlick.width - (summaryFlick.ScrollBar.vertical.visible ? 10 : 0)
+                            spacing: 8
+
+                            // Lead (Detailed + Brief)
+                            Text {
+                                visible: String(screen.summary.lead) !== ""
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: secCol.implicitHeight + 22
-                                radius: 3
-                                color: screen.activeSection === modelData ? Theme.navOnBg : Theme.kpRest
-                                Rectangle {
-                                    visible: traceable
-                                    width: 2
-                                    height: parent.height
-                                    color: screen.activeSection === modelData ? Theme.accent : Theme.line2
-                                }
-                                ColumnLayout {
-                                    id: secCol
-                                    x: 14
-                                    y: 11
-                                    width: parent.width - 28
-                                    spacing: 4
-                                    Text {
-                                        text: modelData
-                                        color: Theme.label2
-                                        font.family: Theme.ui
-                                        font.pixelSize: 9
-                                        font.letterSpacing: 1.6
-                                        font.weight: Font.Medium
-                                    }
-                                    Repeater {
-                                        model: parent.parent.pts
-                                        delegate: Text {
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            text: modelData.text
-                                            color: Theme.inkSoft
-                                            font.family: Theme.body
-                                            font.pixelSize: 13
-                                            lineHeight: 1.45
-                                            wrapMode: Text.WordWrap
+                                text: screen.summary.lead
+                                wrapMode: Text.WordWrap
+                                color: Theme.ink
+                                font.family: Theme.serif
+                                font.pixelSize: screen.summary.summaryType === "brief" ? 18 : 15
+                                lineHeight: 1.35
+                            }
+
+                            // Detailed: key-point rows with hex markers
+                            ColumnLayout {
+                                visible: screen.summary.summaryType === "detailed"
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Repeater {
+                                    model: screen.summary.points
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: kpRow.implicitHeight + 14
+                                        radius: 3
+                                        color: index === screen.activePoint ? Theme.navOnBg : Theme.kpRest
+                                        border.width: 1
+                                        border.color: index === screen.activePoint ? Theme.navOnRing : Theme.line
+                                        RowLayout {
+                                            id: kpRow
+                                            x: 10
+                                            y: 7
+                                            width: parent.width - 20
+                                            spacing: 10
+                                            Hex {
+                                                size: 22
+                                                glyph: String(index + 1).padStart(2, "0")
+                                                glyphSize: 9
+                                                accentInner: index === screen.activePoint
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 2
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.text
+                                                    color: Theme.inkSoft
+                                                    font.family: Theme.ui
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.Medium
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                Text {
+                                                    visible: modelData.hasCitation
+                                                    text: "▸ traces to source"
+                                                    color: Theme.accent
+                                                    font.family: Theme.mono
+                                                    font.pixelSize: 9
+                                                    font.letterSpacing: 0.8
+                                                }
+                                            }
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                screen.activePoint = index;
+                                                screen.trace(modelData);
+                                            }
                                         }
                                     }
                                 }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: traceable
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        screen.activeSection = modelData;
-                                        screen.trace(firstPt);
+                            }
+
+                            // Structured: PURPOSE / METHOD / RESULTS / CONCLUSIONS
+                            ColumnLayout {
+                                visible: screen.summary.summaryType === "structured"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Repeater {
+                                    model: ["PURPOSE", "METHOD", "RESULTS", "CONCLUSIONS"]
+                                    delegate: Rectangle {
+                                        required property string modelData
+                                        property var pts: (screen.summary.sections && screen.summary.sections[modelData]) ? screen.summary.sections[modelData] : []
+                                        property var firstPt: pts.length > 0 ? pts[0] : null
+                                        property bool traceable: firstPt && firstPt.hasCitation
+                                        visible: pts.length > 0
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: secCol.implicitHeight + 14
+                                        radius: 3
+                                        color: screen.activeSection === modelData ? Theme.navOnBg : Theme.kpRest
+                                        border.width: 1
+                                        border.color: screen.activeSection === modelData ? Theme.navOnRing : Theme.line
+                                        Rectangle {
+                                            visible: traceable
+                                            width: 2
+                                            height: parent.height
+                                            color: screen.activeSection === modelData ? Theme.accent : Theme.line2
+                                        }
+                                        ColumnLayout {
+                                            id: secCol
+                                            x: 12
+                                            y: 7
+                                            width: parent.width - 24
+                                            spacing: 3
+                                            Text {
+                                                text: modelData
+                                                color: Theme.label2
+                                                font.family: Theme.ui
+                                                font.pixelSize: 9
+                                                font.letterSpacing: 1.6
+                                                font.weight: Font.Medium
+                                            }
+                                            Repeater {
+                                                model: parent.parent.pts
+                                                delegate: Text {
+                                                    required property var modelData
+                                                    Layout.fillWidth: true
+                                                    text: modelData.text
+                                                    color: Theme.inkSoft
+                                                    font.family: Theme.body
+                                                    font.pixelSize: 13
+                                                    lineHeight: 1.3
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: traceable
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                screen.activeSection = modelData;
+                                                screen.trace(firstPt);
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Item {
-                            Layout.fillHeight: true
-                        }
-                    }
 
-                    // Improvement Suggestions section (if present)
-                    Rectangle {
-                        visible: Boolean(screen.summary && screen.summary.suggestions && screen.summary.suggestions.length > 0)
-                        Layout.fillWidth: true
-                        radius: 3
-                        color: Theme.block
-                        border.width: 1
-                        border.color: Theme.brassRing
-                        implicitHeight: sugCol.implicitHeight + 20
+                            // Improvement Suggestions section (if present)
+                            Rectangle {
+                                visible: Boolean(screen.summary && screen.summary.suggestions && screen.summary.suggestions.length > 0)
+                                Layout.fillWidth: true
+                                radius: 3
+                                color: Theme.block
+                                border.width: 1
+                                border.color: Theme.brassRing
+                                implicitHeight: sugCol.implicitHeight + 14
 
-                        ColumnLayout {
-                            id: sugCol
-                            x: 12
-                            y: 10
-                            width: parent.width - 24
-                            spacing: 6
+                                ColumnLayout {
+                                    id: sugCol
+                                    x: 12
+                                    y: 7
+                                    width: parent.width - 24
+                                    spacing: 4
 
-                            RowLayout {
-                                spacing: 6
-                                Rectangle {
-                                    width: 6
-                                    height: 6
-                                    radius: 3
-                                    color: Theme.brassDot
-                                }
-                                Text {
-                                    text: "DOCUMENT IMPROVEMENT SUGGESTIONS"
-                                    color: Theme.brass
-                                    font.family: Theme.ui
-                                    font.pixelSize: 9
-                                    font.letterSpacing: 1.4
-                                    font.weight: Font.Medium
-                                }
-                            }
+                                    RowLayout {
+                                        spacing: 6
+                                        Rectangle {
+                                            width: 6
+                                            height: 6
+                                            radius: 3
+                                            color: Theme.brassDot
+                                        }
+                                        Text {
+                                            text: "DOCUMENT IMPROVEMENT SUGGESTIONS"
+                                            color: Theme.brass
+                                            font.family: Theme.ui
+                                            font.pixelSize: 9
+                                            font.letterSpacing: 1.4
+                                            font.weight: Font.Medium
+                                        }
+                                    }
 
-                            Repeater {
-                                model: (screen.summary && screen.summary.suggestions) ? screen.summary.suggestions : []
-                                delegate: Text {
-                                    required property string modelData
-                                    Layout.fillWidth: true
-                                    text: "💡 " + modelData
-                                    color: Theme.inkSoft
-                                    font.family: Theme.body
-                                    font.pixelSize: 12
-                                    lineHeight: 1.35
-                                    wrapMode: Text.WordWrap
+                                    Repeater {
+                                        model: (screen.summary && screen.summary.suggestions) ? screen.summary.suggestions : []
+                                        delegate: Text {
+                                            required property string modelData
+                                            Layout.fillWidth: true
+                                            text: "💡 " + modelData
+                                            color: Theme.inkSoft
+                                            font.family: Theme.body
+                                            font.pixelSize: 12
+                                            lineHeight: 1.25
+                                            wrapMode: Text.WordWrap
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -633,6 +651,7 @@ Item {
         // -- Footer -------------------------------------------------------- //
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 36
             spacing: 12
             RowLayout {
                 spacing: 8

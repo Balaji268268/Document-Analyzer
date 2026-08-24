@@ -11,8 +11,8 @@ ApplicationWindow {
     id: win
     visible: true
     visibility: Window.Maximized
-    width: 1240
-    height: 760
+    width: 1920
+    height: 1080
     minimumWidth: 1000
     minimumHeight: 640
     title: "DocSummarizer — Abstract Console"

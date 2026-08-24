@@ -26,6 +26,10 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
         html = p.read_text(encoding="utf-8", errors="ignore")
         snippet = """
 <!-- Cloud Direct PC Upload Overlay -->
+<style>
+  canvas { image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; }
+  #noVNC_container { width: 100% !important; height: 100% !important; }
+</style>
 <div id="quick-upload-bar" style="position:fixed;top:8px;left:320px;z-index:999999;display:flex;align-items:center;gap:8px;background:rgba(11,13,19,0.92);backdrop-filter:blur(8px);border:1px solid #6fc3d8;border-radius:6px;padding:3px 10px;box-shadow:0 4px 14px rgba(0,0,0,0.6);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">
   <button id="upload-from-pc-btn" style="background:#6fc3d8;color:#0b0d13;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.8px;display:flex;align-items:center;gap:6px;" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FROM PC</button>
   <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
@@ -72,13 +76,13 @@ if [ -f "/usr/share/novnc/vnc.html" ]; then
     cp /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 fi
 
-# 3. Start virtual Xvfb display
-echo "Starting virtual display Xvfb on :99..."
+# 3. Start virtual Xvfb display in Full HD 1920x1080
+echo "Starting virtual display Xvfb on :99 (1920x1080 native)..."
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
-Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render -noreset &
+Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
 sleep 2
 
-# 4. Start Openbox & Ultra-Fast VNC Server
+# 4. Start Openbox & High-Definition Lossless VNC Server
 echo "Starting Openbox window manager on :99..."
 mkdir -p ~/.config/openbox
 cat <<'EOF' > ~/.config/openbox/rc.xml
@@ -93,8 +97,8 @@ EOF
 openbox --sm-disable >/dev/null 2>&1 &
 sleep 1
 
-echo "Starting low-latency VNC server on port 5900..."
-x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -nowf >/tmp/x11vnc.log 2>&1 &
+echo "Starting high-fidelity lossless VNC server on port 5900..."
+x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -nowf -ncache 10 -ncache_cr >/tmp/x11vnc.log 2>&1 &
 # 5. Start internal websockify bridge on port 5901
 echo "Starting internal websockify on port 5901..."
 websockify 5901 localhost:5900 >/tmp/websockify.log 2>&1 &
