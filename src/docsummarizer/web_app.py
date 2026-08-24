@@ -103,9 +103,10 @@ def _parse_uploaded_payload(content_type: str, raw_body: bytes) -> tuple[str, by
         filename = str(data.get("filename", "document.pdf"))
         content_str = str(data.get("content", ""))
         file_data = base64.b64decode(content_str) if content_str else b""
-        return filename, file_data
     except Exception:
         return "uploaded_document.pdf", raw_body
+    else:
+        return filename, file_data
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
