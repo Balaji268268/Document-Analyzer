@@ -494,3 +494,32 @@ def test_bridge_summarize_model_guard(qapp: QGuiApplication, monkeypatch, tmp_pa
     assert spy_toast.count() == 1
     assert spy_err.count() == 1
     assert "Please download/load the AI model first" in spy_toast.at(0)[0]
+
+
+def test_bridge_user_registration_and_login(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
+    """Test user registration and authentication flow."""
+    user_file = tmp_path / "test_users.json"
+    monkeypatch.setattr(bridge_mod, "_get_users_file", lambda: user_file)
+
+    bridge = ConsoleBridge(synchronous=True)
+    # Registration validations
+    assert bridge.registerUser("a", "pass") is False
+    assert bridge.registerUser("balaji", "12") is False
+
+    # Successful registration
+    assert bridge.registerUser("balaji", "secretpass123") is True
+    assert user_file.exists()
+
+    # Duplicate registration fails
+    assert bridge.registerUser("balaji", "newpass") is False
+
+    # Authentication
+    assert bridge.authenticate("balaji", "wrongpassword") is False
+    assert bridge.authenticate("balaji", "secretpass123") is True
+    assert bridge.authenticated is True
+    assert bridge.currentUser == "balaji"
+
+    # Logout resets user and session
+    bridge.logout()
+    assert bridge.authenticated is False
+    assert bridge.currentUser == ""

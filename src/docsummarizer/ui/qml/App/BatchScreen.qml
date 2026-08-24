@@ -32,10 +32,12 @@ Item {
     // Let the bridge convert URLs (cross-platform) rather than hand-rolling it.
     FolderDialog {
         id: folderDialog
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: screen.folder = bridge.urlToPath(selectedFolder.toString())
     }
     FolderDialog {
         id: outputDialog
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: screen.outDir = bridge.urlToPath(selectedFolder.toString())
     }
 

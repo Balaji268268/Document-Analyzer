@@ -12,6 +12,8 @@ plain dict (a ``QVariant`` map) since QML cannot consume a frozen dataclass.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import time
@@ -36,6 +38,7 @@ from docsummarizer.model_manager import (
     gpu_offload_supported,
     is_model_downloaded,
 )
+from docsummarizer.paths import app_data_dir
 from docsummarizer.settings import Settings, load_settings, save_settings
 from docsummarizer.ui.workers import Worker
 
@@ -43,6 +46,38 @@ from docsummarizer.ui.workers import Worker
 _DEFAULT_CONTEXT = 8192
 
 SummarizerFactory = Callable[[Path, "int | None", int], Summarizer]
+
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _get_users_file() -> Path:
+    return app_data_dir("users.json")
+
+
+def _load_users() -> dict[str, str]:
+    f = _get_users_file()
+    if f.exists():
+        try:
+            with open(f, encoding="utf-8") as fp:
+                data = json.load(fp)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    default_users = {"admin": _hash_password("admin")}
+    _save_users(default_users)
+    return default_users
+
+
+def _save_users(users: dict[str, str]) -> None:
+    f = _get_users_file()
+    try:
+        with open(f, "w", encoding="utf-8") as fp:
+            json.dump(users, fp, indent=2)
+    except Exception as exc:
+        log_info(f"Failed to save users.json: {exc}")
 
 
 def _quant_label(filename: str) -> str:
@@ -172,6 +207,7 @@ class ConsoleBridge(QObject):
         self._dependencies_ok = True
         self._missing_dependencies: list[dict[str, str]] = []
         self._authenticated = False
+        self._current_user = ""
         # Hold running workers: QThreadPool.start() does not keep a Python
         # reference, so without this the Worker (and its signals) is GC'd before
         # run() finishes and the done/failed signal is silently lost.
@@ -182,36 +218,82 @@ class ConsoleBridge(QObject):
         self.modelReadyChanged.connect(self.docChanged)
 
     authenticatedChanged = Signal()
+    currentUserChanged = Signal()
 
     @Property(bool, notify=authenticatedChanged)
     def authenticated(self) -> bool:
         """Whether the user has authenticated."""
         return self._authenticated
 
+    @Property(str, notify=currentUserChanged)
+    def currentUser(self) -> str:
+        """The currently authenticated username."""
+        return self._current_user
+
     @Slot(str, str, result=bool)
     def authenticate(self, username: str, password: str) -> bool:
-        """Authenticate user credentials."""
+        """Authenticate user credentials against the persistent registry."""
         user_clean = username.strip()
         pass_clean = password.strip()
-        valid_user = user_clean.lower() in ("admin", "user")
-        valid_pass = (
-            pass_clean in ("admin", "user", "password") or pass_clean == "admin" or not pass_clean  # noqa: S105
-        )
-        if valid_user and valid_pass:
+        if not user_clean:
+            self.toast.emit("Username cannot be empty")
+            return False
+
+        users = _load_users()
+        stored_hash = users.get(user_clean.lower())
+        valid = False
+        if stored_hash:
+            valid = stored_hash == _hash_password(pass_clean)
+        elif user_clean.lower() == "admin" and (pass_clean == "admin" or not pass_clean):
+            valid = True
+        elif user_clean.lower() == "user" and (pass_clean == "user" or not pass_clean):
+            valid = True
+
+        if valid:
             self._authenticated = True
+            self._current_user = user_clean
+            self.resetSession()
             self.authenticatedChanged.emit()
+            self.currentUserChanged.emit()
             log_info(f"User '{user_clean}' authenticated successfully.")
             return True
+
         log_info(f"Authentication failed for user '{user_clean}'.")
         self.toast.emit("Invalid username or password")
         return False
 
+    @Slot(str, str, result=bool)
+    def registerUser(self, username: str, password: str) -> bool:
+        """Register a new user account with persistent storage."""
+        user_clean = username.strip()
+        pass_clean = password.strip()
+        if len(user_clean) < 2:
+            self.toast.emit("Username must be at least 2 characters")
+            return False
+        if len(pass_clean) < 3:
+            self.toast.emit("Password must be at least 3 characters")
+            return False
+
+        users = _load_users()
+        if user_clean.lower() in users:
+            self.toast.emit(f"Username '{user_clean}' already exists")
+            return False
+
+        users[user_clean.lower()] = _hash_password(pass_clean)
+        _save_users(users)
+        self.toast.emit("Account created successfully! You can now sign in.")
+        log_info(f"New user registered: '{user_clean}'")
+        return True
+
     @Slot()
     def logout(self) -> None:
-        """Log out the current user session."""
+        """Log out the current user session and reset workspace to clean state."""
         self._authenticated = False
+        self._current_user = ""
+        self.resetSession()
         self.authenticatedChanged.emit()
-        log_info("User logged out.")
+        self.currentUserChanged.emit()
+        log_info("User logged out and session reset.")
 
     @Slot(str)
     def openLocalFolder(self, folder_path: str = "") -> None:
@@ -239,7 +321,11 @@ class ConsoleBridge(QObject):
         self._current_file = ""
         self._extracted_text = ""
         self._last_summary = None
+        self._batch_rows = []
+        self._summary_progress = 0.0
         self.docChanged.emit()
+        self.summaryProgressChanged.emit()
+        self.batchRowsChanged.emit()
         log_info("Session reset to fresh empty state.")
 
     # -- threading seam ----------------------------------------------------- #

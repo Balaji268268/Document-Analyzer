@@ -160,6 +160,39 @@ Rectangle {
             }
         }
 
+        // Logged-in user badge
+        Rectangle {
+            visible: bridge.authenticated && bridge.currentUser !== ""
+            Layout.preferredHeight: 28
+            implicitWidth: userRow.implicitWidth + 16
+            radius: 4
+            color: Theme.block
+            border.width: 1
+            border.color: Theme.line2
+
+            RowLayout {
+                id: userRow
+                anchors.centerIn: parent
+                spacing: 6
+
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Theme.accent
+                }
+
+                Text {
+                    text: bridge.currentUser.toUpperCase()
+                    color: Theme.ink
+                    font.family: Theme.mono
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1
+                }
+            }
+        }
+
         // Logout button
         Rectangle {
             visible: bridge.authenticated
