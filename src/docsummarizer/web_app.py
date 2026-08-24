@@ -314,11 +314,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
             if "multipart/form-data" in content_type:
                 boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
-                boundary = (
-                    boundary_match.group(1).encode("utf-8")
-                    if boundary_match
-                    else b""
-                )
+                boundary = boundary_match.group(1).encode("utf-8") if boundary_match else b""
                 if boundary:
                     parts = raw_body.split(b"--" + boundary)
                     for part in parts:
@@ -337,9 +333,7 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                     data = json.loads(raw_body.decode("utf-8"))
                     filename = str(data.get("filename", "document.pdf"))
                     content_str = str(data.get("content", ""))
-                    file_data = (
-                        base64.b64decode(content_str) if content_str else b""
-                    )
+                    file_data = base64.b64decode(content_str) if content_str else b""
                 except Exception:
                     file_data = raw_body
 
