@@ -68,19 +68,23 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(path)
         rel_path = parsed.path.lstrip("/")
         novnc_dir = Path("/usr/share/novnc")
-        if novnc_dir.exists():
-            if not rel_path or rel_path == "index.html":
-                target = (
-                    novnc_dir / "vnc.html"
-                    if (novnc_dir / "vnc.html").exists()
-                    else novnc_dir / "index.html"
-                )
-                return str(target)
-            cand = novnc_dir / rel_path
-            if cand.exists():
-                return str(cand)
 
-        if not rel_path or rel_path == "index.html":
+        if rel_path in ("vnc", "desktop", "vnc.html") and novnc_dir.exists():
+            target = (
+                novnc_dir / "vnc.html"
+                if (novnc_dir / "vnc.html").exists()
+                else novnc_dir / "index.html"
+            )
+            return str(target)
+
+        if (
+            novnc_dir.exists()
+            and (novnc_dir / rel_path).exists()
+            and not (WEB_STATIC_DIR / rel_path).exists()
+        ):
+            return str(novnc_dir / rel_path)
+
+        if not rel_path or rel_path in ("index.html", "upload", "web"):
             return str(WEB_STATIC_DIR / "index.html")
         return str(WEB_STATIC_DIR / rel_path)
 
@@ -159,7 +163,14 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if parsed.path == "/api/upload":
+        if parsed.path in ("/api/upload", "/upload"):
+            # If opened in a web browser, serve the interactive web upload GUI
+            accept_header = self.headers.get("Accept", "")
+            if "text/html" in accept_header:
+                self.path = "/index.html"
+                super().do_GET()
+                return
+
             self._send_json(
                 {
                     "service": "DocSummarizer File Upload API",
