@@ -31,19 +31,15 @@ def extract_from_pdf(file_path: str) -> str:
     """Extract text from a PDF file, with OCR fallback for scanned pages."""
     text_parts: list[str] = []
 
-    try:
+    with suppress(Exception):
         from pypdf import PdfReader
 
         reader = PdfReader(file_path, strict=False)
         for page in reader.pages:
-            try:
+            with suppress(Exception):
                 page_text = page.extract_text()
                 if page_text and page_text.strip():
                     text_parts.append(page_text.strip())
-            except Exception:
-                pass
-    except Exception:
-        pass
 
     extracted = "\n\n".join(text_parts).strip()
     if extracted:
