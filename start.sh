@@ -46,18 +46,18 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
   }
   #quick-ctrl-bar {
     position: fixed;
-    top: 8px;
-    left: 200px;
+    bottom: 12px;
+    right: 20px;
     z-index: 999999;
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(11, 13, 19, 0.94);
-    backdrop-filter: blur(10px);
-    border: 1px solid #6fc3d8;
+    background: rgba(11, 13, 19, 0.88);
+    backdrop-filter: blur(12px);
+    border: 1px solid #2a4d5e;
     border-radius: 6px;
-    padding: 4px 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.7);
+    padding: 3px 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.8);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   }
   .ctrl-btn {

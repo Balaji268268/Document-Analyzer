@@ -29,37 +29,10 @@ ApplicationWindow {
         bridge.checkOllamaStatus();
     }
 
-    // Radial page vignette
-    Shape {
+    // Clean solid page background (prevents software-rendering curve artifacts)
+    Rectangle {
         anchors.fill: parent
-        preferredRendererType: Shape.CurveRenderer
-        ShapePath {
-            strokeWidth: -1
-            fillGradient: RadialGradient {
-                centerX: win.width / 2
-                centerY: -win.height * 0.18
-                centerRadius: win.width * 0.95
-                focalX: win.width / 2
-                focalY: -win.height * 0.18
-                GradientStop {
-                    position: 0.0
-                    color: Theme.pageTop
-                }
-                GradientStop {
-                    position: 0.56
-                    color: Theme.pageBg
-                }
-                GradientStop {
-                    position: 1.0
-                    color: Theme.pageBottom
-                }
-            }
-            startX: 0
-            startY: 0
-            PathLine { x: win.width; y: 0 }
-            PathLine { x: win.width; y: win.height }
-            PathLine { x: 0; y: win.height }
-        }
+        color: Theme.pageBg
     }
 
     // Faint instrument grid
