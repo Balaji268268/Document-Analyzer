@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQuick.Shapes
 import App
 
 // Application shell: persistent top bar + LCARS rail + a screen Loader.

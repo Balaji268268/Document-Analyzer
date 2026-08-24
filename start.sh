@@ -17,7 +17,7 @@ if command -v ollama >/dev/null 2>&1; then
     sleep 2
 fi
 
-# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar + Dynamic Display Controls
+# 2. Configure noVNC for full-window responsive auto-scaling and global drag-and-drop
 python3 - <<'PYEOF'
 from pathlib import Path
 for name in ["vnc.html", "vnc_lite.html", "index.html"]:
@@ -25,7 +25,6 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
     if p.exists():
         html = p.read_text(encoding="utf-8", errors="ignore")
         snippet = """
-<!-- Cloud Direct PC Upload & Display Controls Overlay -->
 <style>
   html, body {
     margin: 0 !important;
@@ -44,57 +43,24 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
   }
-  #quick-ctrl-bar {
+  #upload-feedback-toast {
     position: fixed;
-    bottom: 12px;
+    top: 12px;
     right: 20px;
     z-index: 999999;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(11, 13, 19, 0.88);
-    backdrop-filter: blur(12px);
-    border: 1px solid #2a4d5e;
+    background: rgba(11, 13, 19, 0.92);
+    border: 1px solid #6fc3d8;
     border-radius: 6px;
-    padding: 3px 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.8);
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  }
-  .ctrl-btn {
-    background: #172430;
+    padding: 6px 14px;
     color: #6fc3d8;
-    border: 1px solid #2a4d5e;
-    padding: 4px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    transition: all 0.15s ease;
-  }
-  .ctrl-btn:hover {
-    background: #6fc3d8;
-    color: #0b0d13;
-  }
-  .ctrl-btn-primary {
-    background: #6fc3d8;
-    color: #0b0d13;
-    border: none;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.8);
   }
 </style>
-
-<div id="quick-ctrl-bar">
-  <button class="ctrl-btn ctrl-btn-primary" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FROM PC</button>
-  <button class="ctrl-btn" onclick="fitScreen()" title="Fit desktop perfectly to browser window">🔍 FIT SCREEN</button>
-  <button class="ctrl-btn" onclick="zoomIn()" title="Zoom in">➕ ZOOM IN</button>
-  <button class="ctrl-btn" onclick="zoomOut()" title="Zoom out">➖ ZOOM OUT</button>
-  <button class="ctrl-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen">🖥️ FULLSCREEN</button>
-  <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
-  <span id="upload-feedback" style="color:#6fc3d8;font-size:11px;font-weight:500;margin-left:4px;"></span>
-</div>
-
+<div id="upload-feedback-toast"></div>
 <script>
 // Auto-force noVNC scaling mode to 'scale' (Fit to screen) so mouse and screen always align perfectly
 function ensureScaling() {
@@ -119,75 +85,46 @@ window.addEventListener('load', function() {
   setTimeout(ensureScaling, 2000);
 });
 
-var currentZoom = 1.0;
-function fitScreen() {
-  currentZoom = 1.0;
-  ensureScaling();
-  var canvas = document.querySelector('#noVNC_container canvas') || document.querySelector('#noVNC_screen canvas');
-  if (canvas) {
-    canvas.style.transform = 'none';
-  }
+function showUploadToast(msg, isError) {
+  var t = document.getElementById('upload-feedback-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.style.borderColor = isError ? '#ff4d4f' : '#6fc3d8';
+  t.style.color = isError ? '#ff4d4f' : '#6fc3d8';
+  t.style.display = 'block';
+  setTimeout(function() { t.style.display = 'none'; }, 5000);
 }
 
-function zoomIn() {
-  currentZoom = Math.min(2.5, currentZoom + 0.15);
-  applyZoom();
-}
-
-function zoomOut() {
-  currentZoom = Math.max(0.5, currentZoom - 0.15);
-  applyZoom();
-}
-
-function applyZoom() {
-  var canvas = document.querySelector('#noVNC_container canvas') || document.querySelector('#noVNC_screen canvas');
-  if (canvas) {
-    canvas.style.transform = 'scale(' + currentZoom + ')';
-    canvas.style.transformOrigin = 'center center';
-  }
-}
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(function(){});
-  } else {
-    document.exitFullscreen().catch(function(){});
-  }
-}
-
-function uploadLocalDocument(input) {
-  if (!input.files || !input.files[0]) return;
-  var file = input.files[0];
-  var feedback = document.getElementById('upload-feedback');
-  feedback.textContent = 'Uploading ' + file.name + '...';
+function uploadLocalDocument(file) {
+  if (!file) return;
+  showUploadToast('Uploading ' + file.name + '...', false);
   var formData = new FormData();
   formData.append('file', file);
   fetch('/api/upload', { method: 'POST', body: formData })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        feedback.textContent = '✅ ' + file.name + ' Loaded into App!';
+        showUploadToast('✅ ' + file.name + ' Loaded into App!', false);
       } else {
-        feedback.textContent = '❌ ' + (data.error || 'Upload failed');
+        showUploadToast('❌ ' + (data.error || 'Upload failed'), true);
       }
-      setTimeout(function() { feedback.textContent = ''; }, 6000);
     })
     .catch(function(err) {
-      feedback.textContent = '❌ Error: ' + err;
+      showUploadToast('❌ Error: ' + err, true);
     });
 }
-// Global drag-and-drop listener
+
+// Global drag-and-drop listener anywhere on the browser window
 window.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
 window.addEventListener('drop', function(e) {
   e.preventDefault();
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    document.getElementById('pc-file-input').files = e.dataTransfer.files;
-    uploadLocalDocument(document.getElementById('pc-file-input'));
+    uploadLocalDocument(e.dataTransfer.files[0]);
   }
 }, false);
 </script>
 """
-        if "quick-ctrl-bar" not in html:
+        if "upload-feedback-toast" not in html:
             html = html.replace("</body>", snippet + "\n</body>")
             p.write_text(html, encoding="utf-8")
 PYEOF
@@ -195,10 +132,10 @@ if [ -f "/usr/share/novnc/vnc.html" ]; then
     cp /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 fi
 
-# 3. Start virtual Xvfb display in Full HD 1920x1080
-echo "Starting virtual display Xvfb on :99 (1920x1080 native)..."
+# 3. Start virtual Xvfb display in 1366x768 (Native 16:9 Laptop/Desktop Resolution)
+echo "Starting virtual display Xvfb on :99 (1366x768 native)..."
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
-Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &
 sleep 2
 
 # 4. Start Openbox & High-Definition Lossless VNC Server
