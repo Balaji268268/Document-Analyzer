@@ -20,6 +20,8 @@ ApplicationWindow {
 
     property string activeScreen: "summary"
     property bool forceFirstRun: false
+    property bool showUploadModal: false
+    property int uploadModalTab: 0
 
     Component.onCompleted: {
         Theme.applyMode(bridge.appearance);
@@ -196,6 +198,14 @@ ApplicationWindow {
         anchors.fill: parent
         shown: false
         visible: false
+    }
+
+    // Document Manager & User Upload History Modal
+    FileUploadModal {
+        anchors.fill: parent
+        visible: win.showUploadModal
+        activeTab: win.uploadModalTab
+        onClosed: win.showUploadModal = false
     }
 
     // Login Modal Overlay (shown whenever user is not authenticated)

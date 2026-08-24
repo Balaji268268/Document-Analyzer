@@ -17,7 +17,9 @@ import json
 import os
 import re
 import time
+import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,7 @@ from docsummarizer.model_manager import (
     StructuredSummary,
     SummarizationCancelledError,
     Summarizer,
+    SummaryPoint,
     download_model,
     get_model_path,
     gpu_offload_supported,
@@ -78,6 +81,32 @@ def _save_users(users: dict[str, str]) -> None:
             json.dump(users, fp, indent=2)
     except Exception as exc:
         log_info(f"Failed to save users.json: {exc}")
+
+
+def _get_history_file() -> Path:
+    return app_data_dir("user_history.json")
+
+
+def _load_all_user_histories() -> dict[str, list[dict[str, Any]]]:
+    f = _get_history_file()
+    if f.exists():
+        try:
+            with f.open(encoding="utf-8") as fp:
+                data = json.load(fp)
+                if isinstance(data, dict):
+                    return data
+        except Exception as exc:
+            log_info(f"Could not load user_history.json: {exc}")
+    return {}
+
+
+def _save_all_user_histories(histories: dict[str, list[dict[str, Any]]]) -> None:
+    f = _get_history_file()
+    try:
+        with f.open("w", encoding="utf-8") as fp:
+            json.dump(histories, fp, indent=2)
+    except Exception as exc:
+        log_info(f"Failed to save user_history.json: {exc}")
 
 
 def _quant_label(filename: str) -> str:
@@ -242,6 +271,7 @@ class ConsoleBridge(QObject):
 
     authenticatedChanged = Signal()
     currentUserChanged = Signal()
+    userHistoryChanged = Signal()
 
     @Property(bool, notify=authenticatedChanged)
     def authenticated(self) -> bool:
@@ -252,6 +282,25 @@ class ConsoleBridge(QObject):
     def currentUser(self) -> str:
         """The currently authenticated username."""
         return self._current_user
+
+    @Property("QVariantList", notify=userHistoryChanged)
+    def userHistory(self) -> list[dict[str, Any]]:
+        """Return persistent upload and summary history for the current user."""
+        user = self._current_user.lower() if self._current_user else "admin"
+        all_hist = _load_all_user_histories()
+        return all_hist.get(user, [])
+
+    def _add_to_user_history(self, item: dict[str, Any]) -> None:
+        """Append an item to the current user's history."""
+        user = self._current_user.lower() if self._current_user else "admin"
+        all_hist = _load_all_user_histories()
+        items = all_hist.get(user, [])
+        # Avoid duplicate consecutive filename entries if identical
+        items.insert(0, item)
+        # Limit history to 50 items per user
+        all_hist[user] = items[:50]
+        _save_all_user_histories(all_hist)
+        self.userHistoryChanged.emit()
 
     @Slot(str, str, result=bool)
     def authenticate(self, username: str, password: str) -> bool:
@@ -278,6 +327,7 @@ class ConsoleBridge(QObject):
             self.resetSession()
             self.authenticatedChanged.emit()
             self.currentUserChanged.emit()
+            self.userHistoryChanged.emit()
             log_info(f"User '{user_clean}' authenticated successfully.")
             return True
 
@@ -287,7 +337,7 @@ class ConsoleBridge(QObject):
 
     @Slot(str, str, result=bool)
     def registerUser(self, username: str, password: str) -> bool:
-        """Register a new user account with persistent storage."""
+        """Register a new user account and immediately log in to workspace."""
         user_clean = username.strip()
         pass_clean = password.strip()
         if len(user_clean) < 2:
@@ -304,8 +354,77 @@ class ConsoleBridge(QObject):
 
         users[user_clean.lower()] = _hash_password(pass_clean)
         _save_users(users)
-        self.toast.emit("Account created successfully! You can now sign in.")
-        log_info(f"New user registered: '{user_clean}'")
+
+        # Immediate auto-login upon registration
+        self._authenticated = True
+        self._current_user = user_clean
+        self.resetSession()
+        self.authenticatedChanged.emit()
+        self.currentUserChanged.emit()
+        self.userHistoryChanged.emit()
+        self.toast.emit(f"Welcome, {user_clean}! Account created & logged in.")
+        log_info(f"New user registered & auto-logged in: '{user_clean}'")
+        return True
+
+    @Slot(str, result=bool)
+    def loadHistoryItem(self, item_id: str) -> bool:
+        """Load a previous document & summary from current user's history."""
+        user = self._current_user.lower() if self._current_user else "admin"
+        all_hist = _load_all_user_histories()
+        user_items = all_hist.get(user, [])
+        for item in user_items:
+            if item.get("id") == item_id or item.get("filename") == item_id:
+                self._current_file = str(item.get("filename", ""))
+                self._extracted_text = str(item.get("extractedText", ""))
+                self._summary_type = str(item.get("summaryType", "detailed"))
+                self.docChanged.emit()
+                self.summaryTypeChanged.emit()
+
+                points_data = item.get("points", [])
+                points = [
+                    SummaryPoint(text=str(p.get("text", "")))
+                    for p in points_data
+                    if isinstance(p, dict)
+                ]
+                reconstructed = StructuredSummary(
+                    summary_type=self._summary_type,
+                    text=str(item.get("summaryText", "")),
+                    points=points,
+                    lead=str(item.get("lead", "")),
+                )
+                self._last_summary = reconstructed
+                self.summaryReady.emit(summary_to_variant(reconstructed))
+                self.toast.emit(f"Loaded from history: {self._current_file}")
+                return True
+        self.toast.emit("History item not found")
+        return False
+
+    @Slot(str, result=bool)
+    def deleteHistoryItem(self, item_id: str) -> bool:
+        """Delete a specific history entry for the current user."""
+        user = self._current_user.lower() if self._current_user else "admin"
+        all_hist = _load_all_user_histories()
+        items = all_hist.get(user, [])
+        new_items = [
+            it for it in items if it.get("id") != item_id and it.get("filename") != item_id
+        ]
+        if len(new_items) != len(items):
+            all_hist[user] = new_items
+            _save_all_user_histories(all_hist)
+            self.userHistoryChanged.emit()
+            self.toast.emit("Item deleted from history.")
+            return True
+        return False
+
+    @Slot(result=bool)
+    def clearUserHistory(self) -> bool:
+        """Clear all history items for the currently logged-in user."""
+        user = self._current_user.lower() if self._current_user else "admin"
+        all_hist = _load_all_user_histories()
+        all_hist[user] = []
+        _save_all_user_histories(all_hist)
+        self.userHistoryChanged.emit()
+        self.toast.emit("Upload history cleared.")
         return True
 
     @Slot()
@@ -316,6 +435,7 @@ class ConsoleBridge(QObject):
         self.resetSession()
         self.authenticatedChanged.emit()
         self.currentUserChanged.emit()
+        self.userHistoryChanged.emit()
         log_info("User logged out and session reset.")
 
     @Slot(str)
@@ -749,6 +869,21 @@ class ConsoleBridge(QObject):
             self.summaryProgressChanged.emit()
             self._finish("Summary complete")
             self.summaryReady.emit(summary_to_variant(summary))
+
+            # Record in user history
+            history_item = {
+                "id": str(uuid.uuid4())[:8],
+                "filename": self._current_file or "Document",
+                "summaryType": summary.summary_type,
+                "summaryText": summary.text,
+                "lead": summary.lead or "",
+                "points": [_point_to_variant(p) for p in summary.points],
+                "extractedText": self._extracted_text,
+                "timestamp": datetime.now(timezone.utc).strftime("%b %d, %H:%M"),
+                "charCount": len(self._extracted_text),
+                "wordCount": len(self._extracted_text.split()),
+            }
+            self._add_to_user_history(history_item)
 
         self._run(work, done)
 

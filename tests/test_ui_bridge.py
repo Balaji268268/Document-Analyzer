@@ -497,18 +497,27 @@ def test_bridge_summarize_model_guard(qapp: QGuiApplication, monkeypatch, tmp_pa
 
 
 def test_bridge_user_registration_and_login(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
-    """Test user registration and authentication flow."""
+    """Test user registration auto-login and authentication flow."""
     user_file = tmp_path / "test_users.json"
+    hist_file = tmp_path / "test_history.json"
     monkeypatch.setattr(bridge_mod, "_get_users_file", lambda: user_file)
+    monkeypatch.setattr(bridge_mod, "_get_history_file", lambda: hist_file)
 
     bridge = ConsoleBridge(synchronous=True)
     # Registration validations
     assert bridge.registerUser("a", "pass") is False
     assert bridge.registerUser("balaji", "12") is False
 
-    # Successful registration
+    # Successful registration immediately logs user in
     assert bridge.registerUser("balaji", "secretpass123") is True
+    assert bridge.authenticated is True
+    assert bridge.currentUser == "balaji"
     assert user_file.exists()
+
+    # Logout
+    bridge.logout()
+    assert bridge.authenticated is False
+    assert bridge.currentUser == ""
 
     # Duplicate registration fails
     assert bridge.registerUser("balaji", "newpass") is False
@@ -519,7 +528,46 @@ def test_bridge_user_registration_and_login(qapp: QGuiApplication, monkeypatch, 
     assert bridge.authenticated is True
     assert bridge.currentUser == "balaji"
 
-    # Logout resets user and session
+
+def test_bridge_per_user_history(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
+    """Test that each user has isolated upload & summary history."""
+    hist_file = tmp_path / "test_history.json"
+    monkeypatch.setattr(bridge_mod, "_get_history_file", lambda: hist_file)
+    monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
+
+    fake = _FakeSummarizer()
+    bridge = ConsoleBridge(summarizer_factory=lambda *_: fake, synchronous=True)
+    bridge.authenticate("alice", "alice")
+
+    # Add mock history item
+    mock_item = {
+        "id": "item-1",
+        "filename": "alice_doc.pdf",
+        "summaryType": "detailed",
+        "summaryText": "Alice summary content",
+        "points": [{"text": "Point 1"}],
+        "extractedText": "Original text of alice",
+        "timestamp": "Aug 24, 12:00",
+        "charCount": 100,
+        "wordCount": 20,
+    }
+    bridge._add_to_user_history(mock_item)
+    assert len(bridge.userHistory) == 1
+    assert bridge.userHistory[0]["filename"] == "alice_doc.pdf"
+
+    # Switch user to Bob
     bridge.logout()
-    assert bridge.authenticated is False
-    assert bridge.currentUser == ""
+    bridge.authenticate("bob", "bob")
+    assert len(bridge.userHistory) == 0  # Bob's history is empty
+
+    # Switch back to Alice and load item
+    bridge.logout()
+    bridge.authenticate("alice", "alice")
+    assert len(bridge.userHistory) == 1
+    assert bridge.loadHistoryItem("item-1") is True
+    assert bridge._current_file == "alice_doc.pdf"
+    assert bridge._extracted_text == "Original text of alice"
+
+    # Delete history item
+    assert bridge.deleteHistoryItem("item-1") is True
+    assert len(bridge.userHistory) == 0

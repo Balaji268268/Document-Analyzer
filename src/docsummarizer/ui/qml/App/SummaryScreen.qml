@@ -187,7 +187,10 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: openDialog.open()
+                onClicked: {
+                    win.uploadModalTab = 0;
+                    win.showUploadModal = true;
+                }
             }
         }
     }

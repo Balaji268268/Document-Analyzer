@@ -160,6 +160,86 @@ Rectangle {
             }
         }
 
+        // Upload Button
+        Rectangle {
+            visible: bridge.authenticated
+            Layout.preferredHeight: 28
+            implicitWidth: uploadRow.implicitWidth + 16
+            radius: 4
+            color: Theme.block
+            border.width: 1
+            border.color: Theme.accent
+
+            RowLayout {
+                id: uploadRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                Text {
+                    text: "📁"
+                    font.pixelSize: 11
+                }
+
+                Text {
+                    text: "UPLOAD"
+                    color: Theme.accent
+                    font.family: Theme.mono
+                    font.pixelSize: 10
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    win.uploadModalTab = 0;
+                    win.showUploadModal = true;
+                }
+            }
+        }
+
+        // User History Button
+        Rectangle {
+            visible: bridge.authenticated
+            Layout.preferredHeight: 28
+            implicitWidth: histRow.implicitWidth + 16
+            radius: 4
+            color: Theme.block
+            border.width: 1
+            border.color: Theme.line2
+
+            RowLayout {
+                id: histRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                Text {
+                    text: "🕒"
+                    font.pixelSize: 11
+                }
+
+                Text {
+                    text: "HISTORY (" + bridge.userHistory.length + ")"
+                    color: Theme.text
+                    font.family: Theme.mono
+                    font.pixelSize: 10
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    win.uploadModalTab = 1;
+                    win.showUploadModal = true;
+                }
+            }
+        }
+
         // Logged-in user badge
         Rectangle {
             visible: bridge.authenticated && bridge.currentUser !== ""

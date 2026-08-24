@@ -17,8 +17,39 @@ if command -v ollama >/dev/null 2>&1; then
     sleep 2
 fi
 
-# 2. Ensure noVNC root defaults to vnc.html so visiting '/' loads the web interface
+# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar
 if [ -f "/usr/share/novnc/vnc.html" ]; then
+    cat <<'EOF' > /tmp/upload_snippet.html
+<div id="quick-upload-bar" style="position:fixed;top:8px;right:60px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.88);backdrop-filter:blur(8px);border:1px solid #10b981;border-radius:8px;padding:6px 14px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;">
+  <button id="upload-from-pc-btn" style="background:#10b981;color:#0f172a;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px;" onclick="document.getElementById('pc-file-input').click()">📁 Upload From Computer</button>
+  <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
+  <span id="upload-feedback" style="color:#6ee7b7;font-size:11px;font-weight:500;"></span>
+</div>
+<script>
+function uploadLocalDocument(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var feedback = document.getElementById('upload-feedback');
+  feedback.textContent = 'Uploading ' + file.name + '...';
+  var formData = new FormData();
+  formData.append('file', file);
+  fetch('/api/upload', { method: 'POST', body: formData })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        feedback.textContent = '✅ ' + file.name + ' loaded!';
+      } else {
+        feedback.textContent = '❌ ' + (data.error || 'Upload failed');
+      }
+      setTimeout(function() { feedback.textContent = ''; }, 5000);
+    })
+    .catch(function(err) {
+      feedback.textContent = '❌ Upload failed: ' + err;
+    });
+}
+</script>
+EOF
+    sed -i '/<\/body>/e cat /tmp/upload_snippet.html' /usr/share/novnc/vnc.html 2>/dev/null || true
     cp /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 elif [ -f "/usr/share/novnc/vnc_lite.html" ]; then
     cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html 2>/dev/null || true
