@@ -283,7 +283,7 @@ class ConsoleBridge(QObject):
         """The currently authenticated username."""
         return self._current_user
 
-    @Property("QVariantList", notify=userHistoryChanged)
+    @Property(list, notify=userHistoryChanged)
     def userHistory(self) -> list[dict[str, Any]]:
         """Return persistent upload and summary history for the current user."""
         user = self._current_user.lower() if self._current_user else "admin"
@@ -391,6 +391,7 @@ class ConsoleBridge(QObject):
                     text=str(item.get("summaryText", "")),
                     points=points,
                     lead=str(item.get("lead", "")),
+                    sections={},
                 )
                 self._last_summary = reconstructed
                 self.summaryReady.emit(summary_to_variant(reconstructed))

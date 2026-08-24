@@ -531,15 +531,18 @@ def test_bridge_user_registration_and_login(qapp: QGuiApplication, monkeypatch, 
 
 def test_bridge_per_user_history(qapp: QGuiApplication, monkeypatch, tmp_path) -> None:
     """Test that each user has isolated upload & summary history."""
+    user_file = tmp_path / "test_users_hist.json"
     hist_file = tmp_path / "test_history.json"
+    monkeypatch.setattr(bridge_mod, "_get_users_file", lambda: user_file)
     monkeypatch.setattr(bridge_mod, "_get_history_file", lambda: hist_file)
     monkeypatch.setattr(bridge_mod, "is_model_downloaded", lambda: True)
 
     fake = _FakeSummarizer()
     bridge = ConsoleBridge(summarizer_factory=lambda *_: fake, synchronous=True)
-    bridge.authenticate("alice", "alice")
+    assert bridge.registerUser("alice", "password123") is True
+    assert bridge.currentUser == "alice"
 
-    # Add mock history item
+    # Add mock history item for Alice
     mock_item = {
         "id": "item-1",
         "filename": "alice_doc.pdf",
@@ -557,12 +560,13 @@ def test_bridge_per_user_history(qapp: QGuiApplication, monkeypatch, tmp_path) -
 
     # Switch user to Bob
     bridge.logout()
-    bridge.authenticate("bob", "bob")
+    assert bridge.registerUser("bob", "password456") is True
+    assert bridge.currentUser == "bob"
     assert len(bridge.userHistory) == 0  # Bob's history is empty
 
     # Switch back to Alice and load item
     bridge.logout()
-    bridge.authenticate("alice", "alice")
+    assert bridge.authenticate("alice", "password123") is True
     assert len(bridge.userHistory) == 1
     assert bridge.loadHistoryItem("item-1") is True
     assert bridge._current_file == "alice_doc.pdf"
