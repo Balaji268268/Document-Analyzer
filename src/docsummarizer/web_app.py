@@ -7,8 +7,10 @@ with sentence grounding citations.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -31,6 +33,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from docsummarizer.document_parser import extract_text  # noqa: E402
 from docsummarizer.logger import log_error, log_info  # noqa: E402
 from docsummarizer.model_manager import SummaryPoint  # noqa: E402
+from docsummarizer.paths import app_data_dir  # noqa: E402
 from docsummarizer.provenance import locate_quote, split_sentences  # noqa: E402
 
 WEB_STATIC_DIR = CURRENT_DIR / "web"
@@ -305,19 +308,17 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             raw_body = self.rfile.read(content_length)
 
-            upload_base = (
-                Path("/tmp/docsummarizer/uploads")
-                if os.name != "nt"
-                else Path(tempfile.gettempdir()) / "docsummarizer" / "uploads"
-            )
-            upload_base.mkdir(parents=True, exist_ok=True)
-
+            upload_base = app_data_dir("uploads")
             filename = "uploaded_document.pdf"
             file_data = b""
 
             if "multipart/form-data" in content_type:
                 boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
-                boundary = boundary_match.group(1).encode("utf-8") if boundary_match else b""
+                boundary = (
+                    boundary_match.group(1).encode("utf-8")
+                    if boundary_match
+                    else b""
+                )
                 if boundary:
                     parts = raw_body.split(b"--" + boundary)
                     for part in parts:
@@ -336,9 +337,9 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                     data = json.loads(raw_body.decode("utf-8"))
                     filename = str(data.get("filename", "document.pdf"))
                     content_str = str(data.get("content", ""))
-                    import base64
-
-                    file_data = base64.b64decode(content_str) if content_str else b""
+                    file_data = (
+                        base64.b64decode(content_str) if content_str else b""
+                    )
                 except Exception:
                     file_data = raw_body
 

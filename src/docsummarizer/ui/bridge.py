@@ -218,13 +218,7 @@ class ConsoleBridge(QObject):
         self.modelReadyChanged.connect(self.docChanged)
 
         if not self._synchronous:
-            upload_base = (
-                Path("/tmp/docsummarizer/uploads") if os.name != "nt" else app_data_dir("uploads")
-            )
-            try:
-                upload_base.mkdir(parents=True, exist_ok=True)
-            except Exception as exc:
-                log_debug(f"Could not create upload directory: {exc}")
+            upload_base = app_data_dir("uploads")
             self._upload_dir = upload_base
             self._ipc_timer = QTimer(self)
             self._ipc_timer.setInterval(500)
