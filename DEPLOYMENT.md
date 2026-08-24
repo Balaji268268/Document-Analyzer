@@ -1,65 +1,65 @@
-# Desktop Deployment & Release Guide — DocSummarizer
+# Deployment & Distribution Guide
 
-Technical guide for building, packaging, and distributing **DocSummarizer** as a standalone native desktop application for Windows and Linux.
+Complete guide for deploying **DocSummarizer** as a standalone desktop application or a cloud-hosted container.
 
 ---
 
-## 🖥️ 1. Local Executable Packaging (PyInstaller)
+## 🖥️ 1. Native Desktop Executable (PyInstaller)
 
-DocSummarizer uses `PyInstaller` with a customized spec configuration to bundle Python, PySide6, QML components, and binary dependencies.
+Build a standalone executable bundle for Windows or Linux:
 
-### Step 1: Install Build Requirements
 ```bash
+# 1. Install packaging dependencies
 pip install -e ".[gui,runtime,dev]" pyinstaller
+
+# 2. Build executable package
+pyinstaller --noconfirm DocSummarizer.spec
 ```
 
-### Step 2: Build Desktop Package
-```bash
-pyinstaller --noconfirm --onedir --windowed --name "DocSummarizer" --paths "src" run.py
-```
-
-- **Output Path**: `dist/DocSummarizer/`
-- **Windows Executable**: `dist/DocSummarizer/DocSummarizer.exe`
-- **Linux Executable**: `dist/DocSummarizer/DocSummarizer`
+- **Windows Output**: `dist/DocSummarizer/DocSummarizer.exe`
+- **Linux Output**: `dist/DocSummarizer/DocSummarizer`
 
 ---
 
-## 🚀 2. Automated GitHub Releases (CI/CD)
+## 🐳 2. Docker & Container Deployment
 
-The repository includes an automated GitHub Actions release workflow ([`.github/workflows/release.yml`](file:///.github/workflows/release.yml)).
+DocSummarizer packages a virtual X11 desktop and web server in a single container:
 
-### Triggering an Automated Release
+```bash
+# Build Docker image
+docker build -t docsummarizer .
 
-1. **Tag your release** with a semver tag:
-   ```bash
-   git tag v2.0.0
-   git push origin v2.0.0
-   ```
+# Run container on port 8080
+docker run -d -p 8080:8080 --name docsummarizer docsummarizer
+```
 
-2. **GitHub Actions** will automatically:
-   - Run tests and static analysis.
-   - Build the standalone executable on Windows and Linux runners.
-   - Create a zip archive (`DocSummarizer-windows-x64.zip` / `DocSummarizer-linux-x64.zip`).
-   - Attach the binary assets directly to your **[GitHub Release Page](https://github.com/Balaji268268/Document-Analyzer/releases)**.
+Access the interface at `http://localhost:8080`.
 
 ---
 
-## 📦 3. PyPI Package Distribution
+## ☁️ 3. Cloud Container Deployment
 
-To allow users to install DocSummarizer directly via `pip`:
+Deploy the Docker container to any container platform:
+
+### Azure App Service / Container Instances
+1. Create an **App Service (Linux Container)** or **Azure Container Instance (ACI)**.
+2. Connect your GitHub repository (`Balaji268268/Document-Analyzer`).
+3. Set environment variable `WEBSITES_PORT=8080`.
+
+### Render / DigitalOcean App Platform / AWS App Runner
+1. Create a **Web Service** from GitHub.
+2. Select **Docker** environment.
+3. Configure HTTP Port: `8080`.
+
+---
+
+## 🚀 4. Automated GitHub Releases (CI/CD)
+
+The repository automatically builds and attaches binaries to GitHub releases on semver tags:
 
 ```bash
-# Build wheel and source distribution
-python -m pip install build
-python -m build
-
-# Publish to PyPI
-python -m pip install twine
-python -m twine upload dist/*
+git tag v2.0.4
+git push origin v2.0.4
 ```
 
-Users can then launch the app on any OS with:
-```bash
-pip install docsummarizer
-docsummarizer
-```
+The GitHub Actions workflow compiles and uploads `DocSummarizer-windows-x64.zip` and `DocSummarizer-linux-x64.zip` to the Releases tab.
