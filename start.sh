@@ -17,7 +17,7 @@ if command -v ollama >/dev/null 2>&1; then
     sleep 2
 fi
 
-# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar + Drag-and-Drop
+# 2. Ensure noVNC root defaults to vnc.html and inject Computer File Upload bar + Dynamic Display Controls
 python3 - <<'PYEOF'
 from pathlib import Path
 for name in ["vnc.html", "vnc_lite.html", "index.html"]:
@@ -25,17 +25,136 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
     if p.exists():
         html = p.read_text(encoding="utf-8", errors="ignore")
         snippet = """
-<!-- Cloud Direct PC Upload Overlay -->
+<!-- Cloud Direct PC Upload & Display Controls Overlay -->
 <style>
-  canvas { image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; }
-  #noVNC_container { width: 100% !important; height: 100% !important; }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    background: #0b0d13 !important;
+  }
+  #noVNC_container {
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+  canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+  #quick-ctrl-bar {
+    position: fixed;
+    top: 8px;
+    left: 200px;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(11, 13, 19, 0.94);
+    backdrop-filter: blur(10px);
+    border: 1px solid #6fc3d8;
+    border-radius: 6px;
+    padding: 4px 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.7);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  .ctrl-btn {
+    background: #172430;
+    color: #6fc3d8;
+    border: 1px solid #2a4d5e;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+  }
+  .ctrl-btn:hover {
+    background: #6fc3d8;
+    color: #0b0d13;
+  }
+  .ctrl-btn-primary {
+    background: #6fc3d8;
+    color: #0b0d13;
+    border: none;
+  }
 </style>
-<div id="quick-upload-bar" style="position:fixed;top:8px;left:320px;z-index:999999;display:flex;align-items:center;gap:8px;background:rgba(11,13,19,0.92);backdrop-filter:blur(8px);border:1px solid #6fc3d8;border-radius:6px;padding:3px 10px;box-shadow:0 4px 14px rgba(0,0,0,0.6);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">
-  <button id="upload-from-pc-btn" style="background:#6fc3d8;color:#0b0d13;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.8px;display:flex;align-items:center;gap:6px;" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FROM PC</button>
+
+<div id="quick-ctrl-bar">
+  <button class="ctrl-btn ctrl-btn-primary" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FROM PC</button>
+  <button class="ctrl-btn" onclick="fitScreen()" title="Fit desktop perfectly to browser window">🔍 FIT SCREEN</button>
+  <button class="ctrl-btn" onclick="zoomIn()" title="Zoom in">➕ ZOOM IN</button>
+  <button class="ctrl-btn" onclick="zoomOut()" title="Zoom out">➖ ZOOM OUT</button>
+  <button class="ctrl-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen">🖥️ FULLSCREEN</button>
   <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
-  <span id="upload-feedback" style="color:#6fc3d8;font-size:11px;font-weight:500;"></span>
+  <span id="upload-feedback" style="color:#6fc3d8;font-size:11px;font-weight:500;margin-left:4px;"></span>
 </div>
+
 <script>
+// Auto-force noVNC scaling mode to 'scale' (Fit to screen) so mouse and screen always align perfectly
+function ensureScaling() {
+  try {
+    localStorage.setItem('noVNC_resize', 'scale');
+    localStorage.setItem('noVNC_autoconnect', 'true');
+    if (window.UI) {
+      if (typeof UI.setSetting === 'function') {
+        UI.setSetting('resize', 'scale');
+      }
+      if (UI.rfb) {
+        UI.rfb.scaleViewport = true;
+        UI.rfb.resizeSession = false;
+      }
+    }
+  } catch(e) {}
+}
+
+window.addEventListener('load', function() {
+  ensureScaling();
+  setTimeout(ensureScaling, 500);
+  setTimeout(ensureScaling, 2000);
+});
+
+var currentZoom = 1.0;
+function fitScreen() {
+  currentZoom = 1.0;
+  ensureScaling();
+  var canvas = document.querySelector('#noVNC_container canvas') || document.querySelector('#noVNC_screen canvas');
+  if (canvas) {
+    canvas.style.transform = 'none';
+  }
+}
+
+function zoomIn() {
+  currentZoom = Math.min(2.5, currentZoom + 0.15);
+  applyZoom();
+}
+
+function zoomOut() {
+  currentZoom = Math.max(0.5, currentZoom - 0.15);
+  applyZoom();
+}
+
+function applyZoom() {
+  var canvas = document.querySelector('#noVNC_container canvas') || document.querySelector('#noVNC_screen canvas');
+  if (canvas) {
+    canvas.style.transform = 'scale(' + currentZoom + ')';
+    canvas.style.transformOrigin = 'center center';
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(function(){});
+  } else {
+    document.exitFullscreen().catch(function(){});
+  }
+}
+
 function uploadLocalDocument(input) {
   if (!input.files || !input.files[0]) return;
   var file = input.files[0];
@@ -68,7 +187,7 @@ window.addEventListener('drop', function(e) {
 }, false);
 </script>
 """
-        if "quick-upload-bar" not in html:
+        if "quick-ctrl-bar" not in html:
             html = html.replace("</body>", snippet + "\n</body>")
             p.write_text(html, encoding="utf-8")
 PYEOF
