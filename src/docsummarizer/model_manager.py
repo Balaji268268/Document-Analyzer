@@ -6,6 +6,7 @@ Handles downloading, loading, and running the local LLM.
 import functools
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
