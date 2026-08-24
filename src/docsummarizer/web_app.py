@@ -56,6 +56,7 @@ SESSIONS: dict[str, SessionState] = {}
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Multi-threaded HTTP Server for concurrency."""
 
+    allow_reuse_address = True
     daemon_threads = True
 
 

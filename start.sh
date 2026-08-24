@@ -49,12 +49,7 @@ echo "Starting low-latency VNC server on port 5900..."
 x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -nowf >/tmp/x11vnc.log 2>&1 &
 sleep 2
 
-# 5. Start background Web API server for direct browser uploads and REST API
-echo "Starting background Web API server on port 8081..."
-python -m docsummarizer.web_app --port 8081 >/tmp/web_app.log 2>&1 &
-sleep 1
-
-# 6. Bind noVNC HTML5 proxy to primary deployment PORT
+# 5. Bind noVNC HTML5 proxy to primary deployment PORT
 APP_PORT="${PORT:-${WEBSITES_PORT:-8080}}"
 echo "Starting noVNC HTML5 web proxy on port ${APP_PORT}..."
 websockify --web /usr/share/novnc "${APP_PORT}" localhost:5900 &
