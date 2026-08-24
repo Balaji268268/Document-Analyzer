@@ -26,10 +26,10 @@ for name in ["vnc.html", "vnc_lite.html", "index.html"]:
         html = p.read_text(encoding="utf-8", errors="ignore")
         snippet = """
 <!-- Cloud Direct PC Upload Overlay -->
-<div id="quick-upload-bar" style="position:fixed;top:10px;right:70px;z-index:999999;display:flex;align-items:center;gap:10px;background:#0d1820;border:2px solid #10b981;border-radius:8px;padding:8px 16px;box-shadow:0 6px 20px rgba(0,0,0,0.8);font-family:system-ui,sans-serif;">
-  <button id="upload-from-pc-btn" style="background:#10b981;color:#0d1820;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:800;font-size:13px;letter-spacing:0.5px;" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FILE FROM YOUR PC</button>
+<div id="quick-upload-bar" style="position:fixed;top:8px;left:320px;z-index:999999;display:flex;align-items:center;gap:8px;background:rgba(11,13,19,0.92);backdrop-filter:blur(8px);border:1px solid #6fc3d8;border-radius:6px;padding:3px 10px;box-shadow:0 4px 14px rgba(0,0,0,0.6);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">
+  <button id="upload-from-pc-btn" style="background:#6fc3d8;color:#0b0d13;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.8px;display:flex;align-items:center;gap:6px;" onclick="document.getElementById('pc-file-input').click()">📁 UPLOAD FROM PC</button>
   <input type="file" id="pc-file-input" style="display:none" accept=".pdf,.docx,.rtf,.txt,.md,.png,.jpg,.jpeg,.webp" onchange="uploadLocalDocument(this)">
-  <span id="upload-feedback" style="color:#6ee7b7;font-size:12px;font-weight:600;"></span>
+  <span id="upload-feedback" style="color:#6fc3d8;font-size:11px;font-weight:500;"></span>
 </div>
 <script>
 function uploadLocalDocument(input) {

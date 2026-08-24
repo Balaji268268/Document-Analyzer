@@ -742,19 +742,92 @@ class Summarizer:
             except Exception as exc:
                 log_error(f"Ollama fallback chat request failed: {exc}")
 
-            # Fallback 2: Intelligent sentence extraction from document prompt
+            # Fallback 2: Intelligent sentence extraction from document body
             prompt_str = messages[-1].get("content", "") if messages else ""
-            lines = [
-                line.strip()
-                for line in prompt_str.splitlines()
-                if len(line.strip()) > 20 and not line.strip().startswith("#")
+            doc_body = prompt_str
+            if "Document:\n" in prompt_str:
+                doc_body = prompt_str.split("Document:\n", 1)[1].strip()
+            elif "Section summaries:\n" in prompt_str:
+                doc_body = prompt_str.split("Section summaries:\n", 1)[1].strip()
+
+            raw_sentences = split_sentences(doc_body)
+            sentences = [
+                s.strip()
+                for s in raw_sentences
+                if len(s.strip()) > 30
+                and not s.strip().startswith(
+                    (
+                        "-",
+                        "*",
+                        "#",
+                        "TABLE OF CONTENTS",
+                        "Analyze the document",
+                        "Summarize the document",
+                    )
+                )
             ]
-            return "\n".join(f"- {line}" for line in lines[:5]) if lines else prompt_str[:300]
+            if not sentences:
+                sentences = [
+                    line.strip()
+                    for line in doc_body.splitlines()
+                    if len(line.strip()) > 25
+                    and not line.strip().startswith(("-", "*", "#", "Analyze", "Summarize"))
+                ]
+
+            is_json = bool(
+                isinstance(kwargs.get("response_format"), dict)
+                and kwargs["response_format"].get("type") == "json_object"
+            )
+            if is_json:
+                lead_text = sentences[0] if sentences else "Summary of document key findings."
+                points_arr = [
+                    {"text": s, "quote": s}
+                    for s in (sentences[1:5] if len(sentences) > 1 else [lead_text])
+                ]
+                purpose_arr = (
+                    [{"text": s, "quote": s} for s in sentences[:2]]
+                    if sentences
+                    else [{"text": lead_text, "quote": lead_text}]
+                )
+                method_arr = (
+                    [{"text": s, "quote": s} for s in sentences[2:4]]
+                    if len(sentences) >= 4
+                    else purpose_arr
+                )
+                results_arr = (
+                    [{"text": s, "quote": s} for s in sentences[4:6]]
+                    if len(sentences) >= 6
+                    else purpose_arr
+                )
+                concl_arr = (
+                    [{"text": s, "quote": s} for s in sentences[6:8]]
+                    if len(sentences) >= 8
+                    else [{"text": "Conclusions synthesized from document findings."}]
+                )
+                data = {
+                    "lead": lead_text,
+                    "points": points_arr,
+                    "sections": {
+                        "PURPOSE": purpose_arr,
+                        "METHOD": method_arr,
+                        "RESULTS": results_arr,
+                        "CONCLUSIONS": concl_arr,
+                    },
+                    "suggestions": [
+                        "Highlight key quantitative metrics in the executive summary for higher readability."
+                    ],
+                }
+                return json.dumps(data)
+
+            if sentences:
+                return "\n\n".join(sentences[:4])
+            return doc_body[:300]
 
         check = self._cancel_check
         if check is None:
             response: Any = llm.create_chat_completion(messages=cast(Any, messages), **kwargs)
-            return str(response["choices"][0]["message"].get("content") or "").strip()
+            raw_out = str(response["choices"][0]["message"].get("content") or "").strip()
+            return raw_out
         _raise_if_cancelled(check)
         content = ""
         try:
