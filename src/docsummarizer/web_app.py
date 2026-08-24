@@ -31,7 +31,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from docsummarizer.document_parser import extract_text  # noqa: E402
-from docsummarizer.logger import log_error, log_info  # noqa: E402
+from docsummarizer.logger import log_debug, log_error, log_info  # noqa: E402
 from docsummarizer.model_manager import SummaryPoint  # noqa: E402
 from docsummarizer.paths import app_data_dir  # noqa: E402
 from docsummarizer.provenance import locate_quote, split_sentences  # noqa: E402
@@ -114,9 +114,9 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_GATEWAY, f"VNC proxy offline: {exc}")
             return
 
-        initial_data = f"{self.command} {self.path} {self.request_version}\r\n".encode("utf-8")
+        initial_data = f"{self.command} {self.path} {self.request_version}\r\n".encode()
         for k, v in self.headers.items():
-            initial_data += f"{k}: {v}\r\n".encode("utf-8")
+            initial_data += f"{k}: {v}\r\n".encode()
         initial_data += b"\r\n"
         backend.sendall(initial_data)
 
@@ -138,8 +138,8 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                         backend.sendall(data)
                     else:
                         client_sock.sendall(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            log_debug(f"WebSocket tunnel closed: {exc}")
         finally:
             backend.close()
 
