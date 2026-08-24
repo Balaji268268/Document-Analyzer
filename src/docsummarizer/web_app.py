@@ -406,21 +406,43 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
             file_data = b""
 
             if "multipart/form-data" in content_type:
-                boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
-                boundary = boundary_match.group(1).encode("utf-8") if boundary_match else b""
-                if boundary:
-                    parts = raw_body.split(b"--" + boundary)
-                    for part in parts:
-                        if b"filename=" in part:
-                            header_part, body_part = part.split(b"\r\n\r\n", 1)
-                            fn_match = re.search(
-                                r'filename="([^"]+)"',
-                                header_part.decode("utf-8", errors="ignore"),
-                            )
-                            if fn_match:
-                                filename = fn_match.group(1)
-                            file_data = body_part.rstrip(b"\r\n")
+                from email.parser import BytesParser
+                from email.policy import default
+
+                try:
+                    msg = BytesParser(policy=default).parsebytes(
+                        f"Content-Type: {content_type}\r\n\r\n".encode("utf-8") + raw_body
+                    )
+                    for part in msg.walk():
+                        fn = part.get_filename()
+                        if fn:
+                            filename = fn
+                            file_data = part.get_payload(decode=True) or b""
                             break
+                except Exception as exc:
+                    log_debug(f"BytesParser multipart error: {exc}")
+
+                if not file_data and b"filename=" in raw_body:
+                    boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
+                    boundary = boundary_match.group(1).encode("utf-8") if boundary_match else b""
+                    if boundary:
+                        parts = raw_body.split(b"--" + boundary)
+                        for p in parts:
+                            if b"filename=" in p:
+                                header_part, body_part = p.split(b"\r\n\r\n", 1)
+                                fn_match = re.search(
+                                    r'filename="([^"]+)"',
+                                    header_part.decode("utf-8", errors="ignore"),
+                                )
+                                if fn_match:
+                                    filename = fn_match.group(1)
+                                if body_part.endswith(b"\r\n--"):
+                                    file_data = body_part[:-4]
+                                elif body_part.endswith(b"\r\n"):
+                                    file_data = body_part[:-2]
+                                else:
+                                    file_data = body_part
+                                break
             else:
                 try:
                     data = json.loads(raw_body.decode("utf-8"))
