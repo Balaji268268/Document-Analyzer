@@ -711,123 +711,125 @@ class Summarizer:
             if installed:
                 self._clear_llama_abort_callback()
 
+
+def _extract_doc_sentences(messages: list[dict[str, str]]) -> list[str]:
+    """Extract clean content sentences from the document prompt."""
+    prompt_str = messages[-1].get("content", "") if messages else ""
+    doc_body = prompt_str
+    if "Document:\n" in prompt_str:
+        doc_body = prompt_str.split("Document:\n", 1)[1].strip()
+    elif "Section summaries:\n" in prompt_str:
+        doc_body = prompt_str.split("Section summaries:\n", 1)[1].strip()
+
+    raw_sentences = split_sentences(doc_body)
+    sentences = [
+        s.strip()
+        for s in raw_sentences
+        if len(s.strip()) > 30
+        and not s.strip().startswith(
+            ("-", "*", "#", "TABLE OF CONTENTS", "Analyze the document", "Summarize the document")
+        )
+    ]
+    if not sentences:
+        sentences = [
+            line.strip()
+            for line in doc_body.splitlines()
+            if len(line.strip()) > 25
+            and not line.strip().startswith(("-", "*", "#", "Analyze", "Summarize"))
+        ]
+    return sentences
+
+
+def _generate_fallback_json(sentences: list[str]) -> str:
+    """Construct structured JSON from extracted document sentences."""
+    lead_text = sentences[0] if sentences else "Summary of document key findings."
+    points_arr = [
+        {"text": s, "quote": s} for s in (sentences[1:5] if len(sentences) > 1 else [lead_text])
+    ]
+    purpose_arr = (
+        [{"text": s, "quote": s} for s in sentences[:2]]
+        if sentences
+        else [{"text": lead_text, "quote": lead_text}]
+    )
+    method_arr = (
+        [{"text": s, "quote": s} for s in sentences[2:4]] if len(sentences) >= 4 else purpose_arr
+    )
+    results_arr = (
+        [{"text": s, "quote": s} for s in sentences[4:6]] if len(sentences) >= 6 else purpose_arr
+    )
+    concl_arr = (
+        [{"text": s, "quote": s} for s in sentences[6:8]]
+        if len(sentences) >= 8
+        else [{"text": "Conclusions synthesized from document findings."}]
+    )
+    data = {
+        "lead": lead_text,
+        "points": points_arr,
+        "sections": {
+            "PURPOSE": purpose_arr,
+            "METHOD": method_arr,
+            "RESULTS": results_arr,
+            "CONCLUSIONS": concl_arr,
+        },
+        "suggestions": [
+            "Highlight key quantitative metrics in the executive summary for higher readability."
+        ],
+    }
+    return json.dumps(data)
+
+
+def _try_ollama_fallback(messages: list[dict[str, str]]) -> str | None:
+    """Attempt completion via active Ollama service."""
+    try:
+        import urllib.request
+
+        from docsummarizer.ollama_manager import (
+            check_ollama_status,
+            get_available_ollama_models,
+        )
+
+        st = check_ollama_status()
+        if st.get("running"):
+            avail = get_available_ollama_models()
+            ollama_model = avail[0] if avail else "llama3"
+            url = "http://localhost:11434/api/chat"
+            payload = json.dumps(
+                {"model": ollama_model, "messages": messages, "stream": False}
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=payload, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                if resp.status == 200:
+                    res_data = json.loads(resp.read().decode("utf-8"))
+                    return str(res_data.get("message", {}).get("content", "")).strip()
+    except Exception as exc:
+        log_error(f"Ollama fallback chat request failed: {exc}")
+    return None
+
     def _complete(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
         """One chat completion."""
         llm = self.llm
         if llm is None:
-            # Fallback 1: Query active Ollama service if available
-            try:
-                import urllib.request
+            ollama_out = _try_ollama_fallback(messages)
+            if ollama_out:
+                return ollama_out
 
-                from docsummarizer.ollama_manager import (
-                    check_ollama_status,
-                    get_available_ollama_models,
-                )
-
-                st = check_ollama_status()
-                if st.get("running"):
-                    avail = get_available_ollama_models()
-                    ollama_model = avail[0] if avail else "llama3"
-                    url = "http://localhost:11434/api/chat"
-                    payload = json.dumps(
-                        {"model": ollama_model, "messages": messages, "stream": False}
-                    ).encode("utf-8")
-                    req = urllib.request.Request(
-                        url, data=payload, headers={"Content-Type": "application/json"}
-                    )
-                    with urllib.request.urlopen(req, timeout=120) as resp:
-                        if resp.status == 200:
-                            res_data = json.loads(resp.read().decode("utf-8"))
-                            return str(res_data.get("message", {}).get("content", "")).strip()
-            except Exception as exc:
-                log_error(f"Ollama fallback chat request failed: {exc}")
-
-            # Fallback 2: Intelligent sentence extraction from document body
-            prompt_str = messages[-1].get("content", "") if messages else ""
-            doc_body = prompt_str
-            if "Document:\n" in prompt_str:
-                doc_body = prompt_str.split("Document:\n", 1)[1].strip()
-            elif "Section summaries:\n" in prompt_str:
-                doc_body = prompt_str.split("Section summaries:\n", 1)[1].strip()
-
-            raw_sentences = split_sentences(doc_body)
-            sentences = [
-                s.strip()
-                for s in raw_sentences
-                if len(s.strip()) > 30
-                and not s.strip().startswith(
-                    (
-                        "-",
-                        "*",
-                        "#",
-                        "TABLE OF CONTENTS",
-                        "Analyze the document",
-                        "Summarize the document",
-                    )
-                )
-            ]
-            if not sentences:
-                sentences = [
-                    line.strip()
-                    for line in doc_body.splitlines()
-                    if len(line.strip()) > 25
-                    and not line.strip().startswith(("-", "*", "#", "Analyze", "Summarize"))
-                ]
-
+            sentences = _extract_doc_sentences(messages)
             is_json = bool(
                 isinstance(kwargs.get("response_format"), dict)
                 and kwargs["response_format"].get("type") == "json_object"
             )
             if is_json:
-                lead_text = sentences[0] if sentences else "Summary of document key findings."
-                points_arr = [
-                    {"text": s, "quote": s}
-                    for s in (sentences[1:5] if len(sentences) > 1 else [lead_text])
-                ]
-                purpose_arr = (
-                    [{"text": s, "quote": s} for s in sentences[:2]]
-                    if sentences
-                    else [{"text": lead_text, "quote": lead_text}]
-                )
-                method_arr = (
-                    [{"text": s, "quote": s} for s in sentences[2:4]]
-                    if len(sentences) >= 4
-                    else purpose_arr
-                )
-                results_arr = (
-                    [{"text": s, "quote": s} for s in sentences[4:6]]
-                    if len(sentences) >= 6
-                    else purpose_arr
-                )
-                concl_arr = (
-                    [{"text": s, "quote": s} for s in sentences[6:8]]
-                    if len(sentences) >= 8
-                    else [{"text": "Conclusions synthesized from document findings."}]
-                )
-                data = {
-                    "lead": lead_text,
-                    "points": points_arr,
-                    "sections": {
-                        "PURPOSE": purpose_arr,
-                        "METHOD": method_arr,
-                        "RESULTS": results_arr,
-                        "CONCLUSIONS": concl_arr,
-                    },
-                    "suggestions": [
-                        "Highlight key quantitative metrics in the executive summary for higher readability."
-                    ],
-                }
-                return json.dumps(data)
-
+                return _generate_fallback_json(sentences)
             if sentences:
                 return "\n\n".join(sentences[:4])
-            return doc_body[:300]
+            return messages[-1].get("content", "")[:300] if messages else ""
 
         check = self._cancel_check
         if check is None:
             response: Any = llm.create_chat_completion(messages=cast(Any, messages), **kwargs)
-            raw_out = str(response["choices"][0]["message"].get("content") or "").strip()
-            return raw_out
+            return str(response["choices"][0]["message"].get("content") or "").strip()
         _raise_if_cancelled(check)
         content = ""
         try:
