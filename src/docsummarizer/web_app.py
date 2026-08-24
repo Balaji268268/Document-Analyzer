@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -51,6 +52,61 @@ class SessionState:
 
 
 SESSIONS: dict[str, SessionState] = {}
+
+
+def _parse_uploaded_payload(content_type: str, raw_body: bytes) -> tuple[str, bytes]:
+    """Parse filename and binary file data from multipart/form-data or JSON upload."""
+    filename = "uploaded_document.pdf"
+    file_data = b""
+
+    if "multipart/form-data" in content_type:
+        from email.parser import BytesParser
+        from email.policy import default
+
+        with suppress(Exception):
+            msg = BytesParser(policy=default).parsebytes(
+                f"Content-Type: {content_type}\r\n\r\n".encode() + raw_body
+            )
+            for part in msg.walk():
+                fn = part.get_filename()
+                if fn:
+                    filename = fn
+                    payload = part.get_payload(decode=True)
+                    if isinstance(payload, bytes):
+                        file_data = payload
+                    break
+
+        if not file_data and b"filename=" in raw_body:
+            boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
+            boundary = boundary_match.group(1).encode() if boundary_match else b""
+            if boundary:
+                parts = raw_body.split(b"--" + boundary)
+                for p in parts:
+                    if b"filename=" in p:
+                        header_part, body_part = p.split(b"\r\n\r\n", 1)
+                        fn_match = re.search(
+                            r'filename="([^"]+)"',
+                            header_part.decode("utf-8", errors="ignore"),
+                        )
+                        if fn_match:
+                            filename = fn_match.group(1)
+                        if body_part.endswith(b"\r\n--"):
+                            file_data = body_part[:-4]
+                        elif body_part.endswith(b"\r\n"):
+                            file_data = body_part[:-2]
+                        else:
+                            file_data = body_part
+                        break
+    else:
+        try:
+            data = json.loads(raw_body.decode("utf-8"))
+            filename = str(data.get("filename", "document.pdf"))
+            content_str = str(data.get("content", ""))
+            file_data = base64.b64decode(content_str) if content_str else b""
+        except Exception:
+            file_data = raw_body
+
+    return filename, file_data
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -392,61 +448,6 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
                 status=500,
                 session_id=session.session_id,
             )
-
-
-def _parse_uploaded_payload(content_type: str, raw_body: bytes) -> tuple[str, bytes]:
-    """Parse filename and binary file data from multipart/form-data or JSON upload."""
-    filename = "uploaded_document.pdf"
-    file_data = b""
-
-    if "multipart/form-data" in content_type:
-        from email.parser import BytesParser
-        from email.policy import default
-
-        with suppress(Exception):
-            msg = BytesParser(policy=default).parsebytes(
-                f"Content-Type: {content_type}\r\n\r\n".encode() + raw_body
-            )
-            for part in msg.walk():
-                fn = part.get_filename()
-                if fn:
-                    filename = fn
-                    payload = part.get_payload(decode=True)
-                    if isinstance(payload, bytes):
-                        file_data = payload
-                    break
-
-        if not file_data and b"filename=" in raw_body:
-            boundary_match = re.search(r"boundary=([^\s;]+)", content_type)
-            boundary = boundary_match.group(1).encode() if boundary_match else b""
-            if boundary:
-                parts = raw_body.split(b"--" + boundary)
-                for p in parts:
-                    if b"filename=" in p:
-                        header_part, body_part = p.split(b"\r\n\r\n", 1)
-                        fn_match = re.search(
-                            r'filename="([^"]+)"',
-                            header_part.decode("utf-8", errors="ignore"),
-                        )
-                        if fn_match:
-                            filename = fn_match.group(1)
-                        if body_part.endswith(b"\r\n--"):
-                            file_data = body_part[:-4]
-                        elif body_part.endswith(b"\r\n"):
-                            file_data = body_part[:-2]
-                        else:
-                            file_data = body_part
-                        break
-    else:
-        try:
-            data = json.loads(raw_body.decode("utf-8"))
-            filename = str(data.get("filename", "document.pdf"))
-            content_str = str(data.get("content", ""))
-            file_data = base64.b64decode(content_str) if content_str else b""
-        except Exception:
-            file_data = raw_body
-
-    return filename, file_data
 
     def _handle_upload(self) -> None:
         """Handle raw or multipart file uploads from web client into the app."""
