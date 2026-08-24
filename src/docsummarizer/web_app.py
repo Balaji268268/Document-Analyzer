@@ -64,9 +64,22 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
     """HTTP Request Handler serving static web assets and REST APIs."""
 
     def translate_path(self, path: str) -> str:
-        """Translate URL path to web static directory files."""
+        """Translate URL path to web static directory files or noVNC assets."""
         parsed = urlparse(path)
         rel_path = parsed.path.lstrip("/")
+        novnc_dir = Path("/usr/share/novnc")
+        if novnc_dir.exists():
+            if not rel_path or rel_path == "index.html":
+                target = (
+                    novnc_dir / "vnc.html"
+                    if (novnc_dir / "vnc.html").exists()
+                    else novnc_dir / "index.html"
+                )
+                return str(target)
+            cand = novnc_dir / rel_path
+            if cand.exists():
+                return str(cand)
+
         if not rel_path or rel_path == "index.html":
             return str(WEB_STATIC_DIR / "index.html")
         return str(WEB_STATIC_DIR / rel_path)
@@ -88,13 +101,81 @@ class DocSummarizerWebHandler(SimpleHTTPRequestHandler):
 
         return SESSIONS[session_id]
 
+    def _proxy_websocket(self) -> None:
+        """Forward WebSocket traffic bi-directionally to internal VNC bridge."""
+        import select
+        import socket
+
+        backend = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            backend.connect(("127.0.0.1", 5901))
+        except Exception as exc:
+            log_error(f"WebSocket proxy connect error: {exc}")
+            self.send_error(HTTPStatus.BAD_GATEWAY, f"VNC proxy offline: {exc}")
+            return
+
+        initial_data = f"{self.command} {self.path} {self.request_version}\r\n".encode("utf-8")
+        for k, v in self.headers.items():
+            initial_data += f"{k}: {v}\r\n".encode("utf-8")
+        initial_data += b"\r\n"
+        backend.sendall(initial_data)
+
+        client_sock = self.connection
+        client_sock.setblocking(False)
+        backend.setblocking(False)
+        sockets = [client_sock, backend]
+
+        try:
+            while True:
+                readable, _, exceptional = select.select(sockets, [], sockets, 60)
+                if exceptional or not readable:
+                    break
+                for s in readable:
+                    data = s.recv(65536)
+                    if not data:
+                        return
+                    if s is client_sock:
+                        backend.sendall(data)
+                    else:
+                        client_sock.sendall(data)
+        except Exception:
+            pass
+        finally:
+            backend.close()
+
     def do_GET(self) -> None:
-        """Handle GET requests for web pages, history, and static assets."""
+        """Handle GET requests for web pages, history, API info, and static assets."""
         parsed = urlparse(self.path)
         session = self._get_session()
+
+        if self.headers.get("Upgrade", "").lower() == "websocket" or parsed.path == "/websockify":
+            self._proxy_websocket()
+            return
+
         if parsed.path == "/api/health":
             self._send_json(
                 {"status": "healthy", "service": "DocSummarizer Web API"},
+                session_id=session.session_id,
+            )
+            return
+
+        if parsed.path == "/api/upload":
+            self._send_json(
+                {
+                    "service": "DocSummarizer File Upload API",
+                    "status": "online",
+                    "method": "POST",
+                    "accepted_formats": [
+                        ".pdf",
+                        ".docx",
+                        ".rtf",
+                        ".txt",
+                        ".md",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
+                    ],
+                },
                 session_id=session.session_id,
             )
             return

@@ -47,13 +47,16 @@ sleep 1
 
 echo "Starting low-latency VNC server on port 5900..."
 x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -nowf >/tmp/x11vnc.log 2>&1 &
-sleep 2
+# 5. Start internal websockify bridge on port 5901
+echo "Starting internal websockify on port 5901..."
+websockify 5901 localhost:5900 >/tmp/websockify.log 2>&1 &
+sleep 1
 
-# 5. Bind noVNC HTML5 proxy to primary deployment PORT
+# 6. Bind unified Web Server (REST API, direct upload & noVNC proxy) to primary deployment PORT
 APP_PORT="${PORT:-${WEBSITES_PORT:-8080}}"
-echo "Starting noVNC HTML5 web proxy on port ${APP_PORT}..."
-websockify --web /usr/share/novnc "${APP_PORT}" localhost:5900 &
-sleep 2
+echo "Starting DocSummarizer Unified Web Server on port ${APP_PORT}..."
+python -m docsummarizer.web_app --port "${APP_PORT}" >/tmp/web_app.log 2>&1 &
+sleep 1
 
 echo "Launching DocSummarizer QML Desktop Application..."
 while true; do
