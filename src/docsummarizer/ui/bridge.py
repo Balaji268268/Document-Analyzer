@@ -60,12 +60,12 @@ def _load_users() -> dict[str, str]:
     f = _get_users_file()
     if f.exists():
         try:
-            with open(f, encoding="utf-8") as fp:
+            with f.open(encoding="utf-8") as fp:
                 data = json.load(fp)
                 if isinstance(data, dict):
                     return data
-        except Exception:
-            pass
+        except Exception as exc:
+            log_info(f"Could not load users file: {exc}")
     default_users = {"admin": _hash_password("admin")}
     _save_users(default_users)
     return default_users
@@ -74,7 +74,7 @@ def _load_users() -> dict[str, str]:
 def _save_users(users: dict[str, str]) -> None:
     f = _get_users_file()
     try:
-        with open(f, "w", encoding="utf-8") as fp:
+        with f.open("w", encoding="utf-8") as fp:
             json.dump(users, fp, indent=2)
     except Exception as exc:
         log_info(f"Failed to save users.json: {exc}")
@@ -244,9 +244,9 @@ class ConsoleBridge(QObject):
         valid = False
         if stored_hash:
             valid = stored_hash == _hash_password(pass_clean)
-        elif user_clean.lower() == "admin" and (pass_clean == "admin" or not pass_clean):
-            valid = True
-        elif user_clean.lower() == "user" and (pass_clean == "user" or not pass_clean):
+        elif user_clean.lower() in ("admin", "user") and (
+            pass_clean in ("admin", "user") or not pass_clean  # noqa: S105
+        ):
             valid = True
 
         if valid:
